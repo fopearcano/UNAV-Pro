@@ -55,6 +55,7 @@ _ID_BTN_RT_CLEAR = 6002
 _ID_BTN_RT_SPLINE = 6003
 _ID_BTN_RT_FOCUS = 6004
 _ID_RT_PANEL = 6005
+_ID_BTN_DATASET_MGR = 7001
 
 
 if _C4D_AVAILABLE:
@@ -114,7 +115,7 @@ if _C4D_AVAILABLE:
 
             # Buttons grid.
             self.GroupBegin(
-                _ID_GROUP_BUTTONS, c4d.BFH_SCALEFIT, cols=2, rows=4,
+                _ID_GROUP_BUTTONS, c4d.BFH_SCALEFIT, cols=2, rows=5,
                 title="Actions",
             )
             self.GroupBorderSpace(8, 8, 8, 8)
@@ -126,6 +127,7 @@ if _C4D_AVAILABLE:
             self.AddButton(_ID_BTN_REGENERATE, c4d.BFH_SCALEFIT, name="Regenerate Visible Field")
             self.AddButton(_ID_BTN_INSPECT, c4d.BFH_SCALEFIT, name="Inspect Selected Object")
             self.AddButton(_ID_BTN_COPY_META, c4d.BFH_SCALEFIT, name="Copy Metadata JSON")
+            self.AddButton(_ID_BTN_DATASET_MGR, c4d.BFH_SCALEFIT, name="Dataset Manager…")
             self.GroupEnd()
 
             # Status log.
@@ -249,6 +251,8 @@ if _C4D_AVAILABLE:
                     self._do_route_spline()
                 elif mid == _ID_BTN_RT_FOCUS:
                     self._do_route_focus()
+                elif mid == _ID_BTN_DATASET_MGR:
+                    self._do_open_dataset_manager()
                 elif mid == _ID_BTN_CLEAR_LOG:
                     self.SetString(_ID_LOG, "")
             except Exception as exc:  # noqa: BLE001 — UI boundary handler
@@ -363,6 +367,27 @@ if _C4D_AVAILABLE:
                 self._append_log("Focus Navigator: no active document.")
                 return
             self._append_log(focus_navigator_on(doc, self._route))
+
+        # The dataset manager dialog is async and persistent: we
+        # keep one instance per session so re-clicking the menu
+        # reuses the same window.
+        _dataset_dialog = None
+
+        def _do_open_dataset_manager(self) -> None:
+            from core.plugin_ids import PLUGIN_ID_DATASET_DIALOG
+            from ui.dataset_manager import UnavDatasetDialog
+
+            if self._dataset_dialog is None:
+                self._dataset_dialog = UnavDatasetDialog()
+            opened = self._dataset_dialog.Open(
+                dlgtype=c4d.DLG_TYPE_ASYNC,
+                pluginid=PLUGIN_ID_DATASET_DIALOG,
+                defaultw=520, defaulth=520,
+            )
+            self._append_log(
+                "Dataset Manager: opened." if opened
+                else "Dataset Manager: could not open window."
+            )
 
         def _do_copy_metadata(self) -> None:
             from ui.metadata_panel import (
