@@ -48,3 +48,15 @@ def test_regenerate_visible_field_without_c4d_reports_cleanly():
     out = mock_actions.regenerate_visible_field()
     assert "Regenerate Visible Field" in out
     assert "Cinema 4D not available" in out
+
+
+def test_sync_visible_sector_without_c4d_reports_cleanly():
+    out = mock_actions.sync_visible_sector()
+    assert "Sync Visible Sector" in out
+    assert "Cinema 4D not available" in out
+
+
+def test_toggle_debug_cone_without_c4d_reports_cleanly():
+    out = mock_actions.toggle_debug_cone(True)
+    assert "Debug Cone" in out
+    assert "Cinema 4D not available" in out

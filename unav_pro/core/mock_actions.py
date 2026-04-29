@@ -289,6 +289,84 @@ def apply_view_filter(catalog_path: Optional[str] = None) -> str:
     return _safe("Apply View Filter", _do)
 
 
+def sync_visible_sector(
+    catalog_path: Optional[str] = None,
+    encoding=None,
+    show_debug_cone: bool = False,
+) -> str:
+    """Update the UNAV_VisibleSector in place — diff-and-update without
+    a full clear.
+
+    Loads the catalog, filters against the active navigator, then
+    calls ``core.scene_sync.sync_visible_sector`` which adds newly
+    visible objects, keeps still-visible ones, and removes the rest.
+    Reports the add/keep/remove counts in the status line.
+    """
+
+    def _do() -> str:
+        try:
+            from c4d import documents  # type: ignore
+        except ImportError:
+            return "Cinema 4D not available; cannot sync"
+
+        from core.scene_sync import sync_visible_sector as do_sync
+
+        objects, err = _load_objects_or_message(catalog_path)
+        if err is not None:
+            return err
+        if not objects:
+            return "catalog is empty"
+
+        filtered, frag, used_filter = _filter_for_active_navigator(objects)
+        if not used_filter:
+            return f"cannot sync without navigator: {frag}"
+
+        doc = documents.GetActiveDocument()
+        if doc is None:
+            return "no active document"
+
+        # Determine the scene scale + max_visible from the navigator
+        # so the sync respects the navigator's hard cap.
+        from c4d_objects.navigation_null import (
+            find_navigator,
+            get_navigation_filter_params,
+        )
+
+        navigator = find_navigator(doc)
+        if navigator is None:
+            return "no UNAV_Navigator in scene"
+        params = get_navigation_filter_params(navigator)
+        diff = do_sync(
+            doc,
+            filtered,
+            encoding=encoding,
+            scale_mode=params.c4d_scale,
+            max_visible=params.max_visible_objects,
+            show_debug_cone=show_debug_cone,
+        )
+        return f"{diff.short_summary()}; filter: {frag}"
+
+    return _safe("Sync Visible Sector", _do)
+
+
+def toggle_debug_cone(show: bool) -> str:
+    """Show or hide the debug cone independently of a sync pass."""
+
+    def _do() -> str:
+        try:
+            from c4d import documents  # type: ignore
+        except ImportError:
+            return "Cinema 4D not available"
+        from core.scene_sync import update_debug_cone
+
+        doc = documents.GetActiveDocument()
+        if doc is None:
+            return "no active document"
+        return update_debug_cone(doc, show=bool(show))
+
+    return _safe("Debug Cone", _do)
+
+
 def regenerate_visible_field(
     catalog_path: Optional[str] = None,
     encoding=None,

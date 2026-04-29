@@ -56,6 +56,17 @@ _log = get_logger("c4d_objects.point_cloud_builder")
 #: scene. ``find_starfield`` looks this up by marker first, by name
 #: second.
 STARFIELD_NAME = "UNAV_Starfield"
+VISIBLE_SECTOR_NAME = "UNAV_VisibleSector"
+DEBUG_ROOT_NAME = "UNAV_Debug"
+
+#: Marker ``kind`` values for the wider hierarchy. Each is part of the
+#: same ``BC_ID_UNAV_MARKER`` container, distinguished by
+#: ``MARKER_KEY_KIND``.
+KIND_STARFIELD = "starfield"
+KIND_POINT = "point"
+KIND_VISIBLE_SECTOR = "visible_sector"
+KIND_DEBUG_ROOT = "debug_root"
+KIND_DEBUG_CONE = "debug_cone"
 
 #: Sub-IDs inside the marker BaseContainer. Stable across versions —
 #: changing them is a save-file-breaking change.
@@ -153,9 +164,18 @@ def starfield_marker(scale_mode: str = DEFAULT_SCALE_MODE) -> Dict[int, Any]:
     """Marker payload for the parent ``UNAV_Starfield`` null."""
     return {
         MARKER_KEY_IS_UNAV: True,
-        MARKER_KEY_KIND: "starfield",
+        MARKER_KEY_KIND: KIND_STARFIELD,
         MARKER_KEY_NAME: STARFIELD_NAME,
         MARKER_KEY_METADATA_JSON: f'{{"scale_mode": "{scale_mode}"}}',
+        MARKER_KEY_SCHEMA_VERSION: 1,
+    }
+
+
+def _named_kind_marker(kind: str, name: str) -> Dict[int, Any]:
+    return {
+        MARKER_KEY_IS_UNAV: True,
+        MARKER_KEY_KIND: kind,
+        MARKER_KEY_NAME: name,
         MARKER_KEY_SCHEMA_VERSION: 1,
     }
 
@@ -267,12 +287,93 @@ def find_starfield(doc: "c4d.documents.BaseDocument") -> Optional["c4d.BaseObjec
     obj = doc.GetFirstObject()
     while obj is not None:
         marker = _read_marker(obj)
-        if marker is not None and marker.get(MARKER_KEY_KIND) == "starfield":
+        if marker is not None and marker.get(MARKER_KEY_KIND) == KIND_STARFIELD:
             return obj
         if obj.GetName() == STARFIELD_NAME:
             return obj
         obj = obj.GetNext()
     return None
+
+
+def _find_child_by_kind(
+    parent: "c4d.BaseObject", kind: str,
+) -> Optional["c4d.BaseObject"]:
+    """Return the first immediate child of ``parent`` whose marker
+    ``kind`` matches, or None."""
+    _require_c4d()
+    child = parent.GetDown()
+    while child is not None:
+        marker = _read_marker(child)
+        if marker is not None and marker.get(MARKER_KEY_KIND) == kind:
+            return child
+        child = child.GetNext()
+    return None
+
+
+def _ensure_kind_child(
+    doc: "c4d.documents.BaseDocument",
+    parent: "c4d.BaseObject",
+    kind: str,
+    name: str,
+) -> "c4d.BaseObject":
+    """Find or create a child null under ``parent`` carrying ``kind``."""
+    _require_c4d()
+    existing = _find_child_by_kind(parent, kind)
+    if existing is not None:
+        return existing
+    null = c4d.BaseObject(c4d.Onull)
+    null.SetName(name)
+    null[c4d.NULLOBJECT_DISPLAY] = c4d.NULLOBJECT_DISPLAY_NONE
+    _write_marker(null, _named_kind_marker(kind, name))
+    null.InsertUnder(parent)
+    doc.AddUndo(c4d.UNDOTYPE_NEWOBJ, null)
+    return null
+
+
+def find_visible_sector(
+    doc: "c4d.documents.BaseDocument",
+) -> Optional["c4d.BaseObject"]:
+    """Return the ``UNAV_VisibleSector`` null under the starfield, or None."""
+    _require_c4d()
+    starfield = find_starfield(doc)
+    if starfield is None:
+        return None
+    return _find_child_by_kind(starfield, KIND_VISIBLE_SECTOR)
+
+
+def find_debug_root(
+    doc: "c4d.documents.BaseDocument",
+) -> Optional["c4d.BaseObject"]:
+    """Return the ``UNAV_Debug`` null under the starfield, or None."""
+    _require_c4d()
+    starfield = find_starfield(doc)
+    if starfield is None:
+        return None
+    return _find_child_by_kind(starfield, KIND_DEBUG_ROOT)
+
+
+def ensure_starfield_hierarchy(
+    doc: "c4d.documents.BaseDocument",
+    scale_mode: str = DEFAULT_SCALE_MODE,
+) -> Tuple["c4d.BaseObject", "c4d.BaseObject", "c4d.BaseObject"]:
+    """Find or create ``UNAV_Starfield`` plus its two children
+    (``UNAV_VisibleSector`` and ``UNAV_Debug``).
+
+    Returns ``(starfield, visible_sector, debug_root)``. Existing
+    nodes are reused; only what is missing gets created (and its
+    creation is recorded for undo).
+    """
+    _require_c4d()
+    starfield = find_starfield(doc)
+    if starfield is None:
+        starfield = _create_starfield_null(doc, scale_mode=scale_mode)
+    visible = _ensure_kind_child(
+        doc, starfield, KIND_VISIBLE_SECTOR, VISIBLE_SECTOR_NAME,
+    )
+    debug = _ensure_kind_child(
+        doc, starfield, KIND_DEBUG_ROOT, DEBUG_ROOT_NAME,
+    )
+    return starfield, visible, debug
 
 
 def _create_starfield_null(
@@ -315,7 +416,9 @@ def build_starfield(
             if removed:
                 _log.info("Removed %d pre-existing UNAV objects.", removed)
 
-        parent = _create_starfield_null(doc, scale_mode=scale_mode)
+        _starfield, visible_sector, _debug = ensure_starfield_hierarchy(
+            doc, scale_mode=scale_mode,
+        )
 
         count = 0
         for obj in objects:
@@ -326,9 +429,10 @@ def build_starfield(
             except Exception:  # noqa: BLE001 — never let one bad row stop the build
                 _log.exception("Skipping bad object during build: uid=%r", getattr(obj, "uid", None))
                 continue
-            child.InsertUnder(parent)
+            child.InsertUnder(visible_sector)
             doc.AddUndo(c4d.UNDOTYPE_NEWOBJ, child)
             count += 1
+        parent = _starfield
     finally:
         doc.EndUndo()
 

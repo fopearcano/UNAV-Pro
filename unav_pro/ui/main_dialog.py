@@ -45,6 +45,10 @@ _ID_NUM_SIZE_SCALE = 4002
 _ID_NUM_BRIGHTNESS_SCALE = 4003
 # Combo-box items live in a private id range; offset from the combo id.
 _COMBO_BASE = 4100
+_ID_GROUP_SYNC = 5000
+_ID_BTN_SYNC = 5001
+_ID_CHK_AUTO_SYNC = 5002
+_ID_CHK_DEBUG_CONE = 5003
 
 
 if _C4D_AVAILABLE:
@@ -81,6 +85,24 @@ if _C4D_AVAILABLE:
             self.AddEditNumberArrows(_ID_NUM_BRIGHTNESS_SCALE, c4d.BFH_SCALEFIT)
             self.SetFloat(
                 _ID_NUM_BRIGHTNESS_SCALE, 1.0, min=0.01, max=100.0, step=0.1,
+            )
+            self.GroupEnd()
+
+            # Sync controls (lives between Display and the action grid
+            # because Sync Visible Sector is the workflow primary).
+            self.GroupBegin(
+                _ID_GROUP_SYNC, c4d.BFH_SCALEFIT, cols=3, rows=1,
+                title="Visible Sector",
+            )
+            self.GroupBorderSpace(8, 8, 8, 8)
+            self.AddButton(_ID_BTN_SYNC, c4d.BFH_SCALEFIT, name="Sync Visible Sector")
+            self.AddCheckbox(
+                _ID_CHK_AUTO_SYNC, c4d.BFH_LEFT, initw=0, inith=0,
+                name="Auto Sync",
+            )
+            self.AddCheckbox(
+                _ID_CHK_DEBUG_CONE, c4d.BFH_LEFT, initw=0, inith=0,
+                name="Show Debug Cone",
             )
             self.GroupEnd()
 
@@ -163,6 +185,23 @@ if _C4D_AVAILABLE:
                             encoding=self._read_encoding(),
                         )
                     )
+                elif mid == _ID_BTN_SYNC:
+                    self._append_log(
+                        mock_actions.sync_visible_sector(
+                            encoding=self._read_encoding(),
+                            show_debug_cone=bool(
+                                self.GetBool(_ID_CHK_DEBUG_CONE)
+                            ),
+                        )
+                    )
+                elif mid == _ID_CHK_AUTO_SYNC:
+                    self._append_log(
+                        "Auto Sync: not yet implemented; "
+                        "click Sync Visible Sector manually."
+                    )
+                elif mid == _ID_CHK_DEBUG_CONE:
+                    show = bool(self.GetBool(_ID_CHK_DEBUG_CONE))
+                    self._append_log(mock_actions.toggle_debug_cone(show))
                 elif mid == _ID_BTN_INSPECT:
                     self._do_inspect()
                 elif mid == _ID_BTN_COPY_META:
