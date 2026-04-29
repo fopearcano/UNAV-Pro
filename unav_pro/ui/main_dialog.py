@@ -56,6 +56,9 @@ _ID_BTN_RT_SPLINE = 6003
 _ID_BTN_RT_FOCUS = 6004
 _ID_RT_PANEL = 6005
 _ID_BTN_DATASET_MGR = 7001
+_ID_BTN_SAVE_STATE = 7002
+_ID_BTN_LOAD_STATE = 7003
+_ID_BTN_RESET_PREFS = 7004
 
 
 if _C4D_AVAILABLE:
@@ -115,7 +118,7 @@ if _C4D_AVAILABLE:
 
             # Buttons grid.
             self.GroupBegin(
-                _ID_GROUP_BUTTONS, c4d.BFH_SCALEFIT, cols=2, rows=5,
+                _ID_GROUP_BUTTONS, c4d.BFH_SCALEFIT, cols=2, rows=7,
                 title="Actions",
             )
             self.GroupBorderSpace(8, 8, 8, 8)
@@ -128,6 +131,9 @@ if _C4D_AVAILABLE:
             self.AddButton(_ID_BTN_INSPECT, c4d.BFH_SCALEFIT, name="Inspect Selected Object")
             self.AddButton(_ID_BTN_COPY_META, c4d.BFH_SCALEFIT, name="Copy Metadata JSON")
             self.AddButton(_ID_BTN_DATASET_MGR, c4d.BFH_SCALEFIT, name="Dataset Manager…")
+            self.AddButton(_ID_BTN_SAVE_STATE, c4d.BFH_SCALEFIT, name="Save UNAV State")
+            self.AddButton(_ID_BTN_LOAD_STATE, c4d.BFH_SCALEFIT, name="Load UNAV State")
+            self.AddButton(_ID_BTN_RESET_PREFS, c4d.BFH_SCALEFIT, name="Reset Preferences")
             self.GroupEnd()
 
             # Status log.
@@ -253,6 +259,17 @@ if _C4D_AVAILABLE:
                     self._do_route_focus()
                 elif mid == _ID_BTN_DATASET_MGR:
                     self._do_open_dataset_manager()
+                elif mid == _ID_BTN_SAVE_STATE:
+                    self._append_log(
+                        mock_actions.save_unav_state(
+                            route=self._route,
+                            encoding=self._read_encoding(),
+                        )
+                    )
+                elif mid == _ID_BTN_LOAD_STATE:
+                    self._append_log(mock_actions.load_unav_state())
+                elif mid == _ID_BTN_RESET_PREFS:
+                    self._append_log(mock_actions.reset_preferences())
                 elif mid == _ID_BTN_CLEAR_LOG:
                     self.SetString(_ID_LOG, "")
             except Exception as exc:  # noqa: BLE001 — UI boundary handler

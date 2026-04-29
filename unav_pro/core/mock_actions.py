@@ -443,3 +443,167 @@ def clear_scene() -> str:
         return f"removed {removed} UNAV objects"
 
     return _safe("Clear Scene", _do)
+
+
+# ---------------------------------------------------------------------------
+# Save / Load UNAV State, Reset Preferences
+# ---------------------------------------------------------------------------
+
+
+_BC_ID_UNAV_STATE = 1000021  # private slot on the BaseDocument
+
+
+def save_unav_state(
+    *,
+    route=None,
+    encoding=None,
+    config=None,
+    notes: str = "",
+) -> str:
+    """Persist the current UNAV state to a sidecar file next to the
+    scene **and** into the document's BaseContainer so it travels
+    with the .c4d file.
+
+    Failures are surfaced as status strings. Missing pieces (no
+    navigator in scene, empty route) are recorded but do not block
+    the save.
+    """
+
+    def _do() -> str:
+        try:
+            from c4d import documents  # type: ignore
+        except ImportError:
+            return "Cinema 4D not available; cannot save state"
+
+        from core.dataset_registry import (
+            DatasetRegistry, default_registry_path,
+        )
+        from core.project_state import (
+            gather_project_state, save_project_state, sidecar_path_for,
+        )
+
+        doc = documents.GetActiveDocument()
+        if doc is None:
+            return "no active document"
+
+        # Read live navigator params, if any.
+        navigator_params = None
+        try:
+            from c4d_objects.navigation_null import (
+                find_navigator, get_navigation_filter_params,
+            )
+            nav = find_navigator(doc)
+            if nav is not None:
+                navigator_params = get_navigation_filter_params(nav)
+        except Exception:  # noqa: BLE001 — defensive
+            navigator_params = None
+
+        registry = DatasetRegistry.load(default_registry_path())
+
+        state = gather_project_state(
+            registry=registry,
+            navigator=navigator_params,
+            route=route,
+            encoding=encoding,
+            config=config,
+            notes=notes,
+        )
+
+        # Sidecar JSON.
+        scene_path = doc.GetDocumentPath() and doc.GetDocumentName()
+        if scene_path:
+            scene_path = doc.GetDocumentName()
+        sidecar = sidecar_path_for(scene_path)
+        wrote = save_project_state(state, sidecar)
+
+        # Scene-level BaseContainer slot.
+        try:
+            doc.GetDataInstance()[_BC_ID_UNAV_STATE] = state.to_json()
+        except Exception:  # noqa: BLE001 — defensive
+            pass
+
+        if wrote is None:
+            return "Save UNAV State: scene container ✓; sidecar write failed."
+        return f"Save UNAV State: scene container ✓; sidecar at {wrote}"
+
+    return _safe("Save UNAV State", _do)
+
+
+def load_unav_state() -> str:
+    """Reload the project state into the live registry. The dialog
+    handler picks up the returned dict via the ``_state_apply``
+    side-channel when running inside C4D; this wrapper only reports
+    a status."""
+
+    def _do() -> str:
+        try:
+            from c4d import documents  # type: ignore
+        except ImportError:
+            return "Cinema 4D not available; cannot load state"
+
+        from core.dataset_registry import (
+            DatasetRegistry, default_registry_path,
+        )
+        from core.project_state import (
+            ProjectState, apply_project_state, load_project_state,
+            sidecar_path_for,
+        )
+
+        doc = documents.GetActiveDocument()
+        if doc is None:
+            return "no active document"
+
+        # 1. Try the document's BaseContainer (scene-level metadata).
+        state: ProjectState = ProjectState()
+        source = "none"
+        try:
+            raw = doc.GetDataInstance().GetString(_BC_ID_UNAV_STATE)
+        except Exception:  # noqa: BLE001
+            raw = ""
+        if raw:
+            state = ProjectState.from_json(raw)
+            source = "scene container"
+        else:
+            # 2. Fall back to sidecar JSON.
+            sidecar = sidecar_path_for(doc.GetDocumentName())
+            if os.path.isfile(sidecar):
+                state = load_project_state(sidecar)
+                source = sidecar
+
+        if state.schema_version == 0 or (
+            not state.navigator and not state.route
+            and not state.visual_encoding and not state.enabled_datasets
+        ):
+            return "Load UNAV State: no UNAV state found in scene or sidecar."
+
+        registry_path = default_registry_path()
+        registry = DatasetRegistry.load(registry_path)
+        applied = apply_project_state(state, registry=registry)
+        # Persist registry's enabled-flag changes so the dataset
+        # manager picks them up.
+        try:
+            registry.save(registry_path)
+        except OSError:
+            pass
+        return (
+            f"Load UNAV State (from {source}): "
+            f"{applied['report'].short_summary()}"
+        )
+
+    return _safe("Load UNAV State", _do)
+
+
+def reset_preferences(*, delete_file: bool = False) -> str:
+    """Wipe the per-user config back to defaults. Does **not** touch
+    project state files or the dataset registry — those are owned by
+    different surfaces."""
+
+    def _do() -> str:
+        from core.config import default_config_path, reset_config
+
+        path = default_config_path()
+        reset_config(path, delete_file=delete_file)
+        suffix = " (file removed)" if delete_file else " (rewritten with defaults)"
+        return f"Reset Preferences: {path}{suffix}"
+
+    return _safe("Reset Preferences", _do)
