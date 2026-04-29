@@ -10,3 +10,11 @@ Thumbs.db
 build/
 dist/
 *.egg-info/
+
+# Preprocessing outputs — produced by tools/fetch_*.py and
+# tools/build_spatial_index.py. These are documented user
+# locations (see docs/V0_3_GAIA_DR3_WORKFLOW.md), reproducible
+# from the CLIs, and may carry source-archive licensing
+# (e.g. Gaia DR3 citation requirements). Never commit.
+/data/catalogs/
+/cache/
