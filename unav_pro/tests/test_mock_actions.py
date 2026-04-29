@@ -19,9 +19,10 @@ def test_load_dataset_missing_path_reports_cleanly():
     assert "not found" in out
 
 
-def test_create_navigation_null():
+def test_create_navigation_null_without_c4d_reports_cleanly():
     out = mock_actions.create_navigation_null()
     assert "Create Navigation Null" in out
+    assert "Cinema 4D not available" in out
 
 
 def test_generate_point_cloud_without_c4d_reports_cleanly():

@@ -83,8 +83,37 @@ def load_dataset(path: Optional[str] = None) -> str:
 
 
 def create_navigation_null() -> str:
+    """Ensure the UNAV_Navigator hierarchy exists in the active scene.
+
+    If the navigator already exists, it is selected rather than
+    duplicated. Reports whether the hierarchy was created or already
+    present.
+    """
+
     def _do() -> str:
-        return "mock navigation null 'UNAV Navigator' would be inserted into active doc"
+        try:
+            from c4d import documents  # type: ignore
+        except ImportError:
+            return "Cinema 4D not available; cannot create navigation null"
+
+        from c4d_objects.navigation_null import (
+            CAMERA_NAME,
+            NAVIGATOR_NAME,
+            RAY_NAME,
+            ensure_navigator,
+        )
+
+        doc = documents.GetActiveDocument()
+        if doc is None:
+            return "no active document; open a scene first"
+
+        _, was_created = ensure_navigator(doc)
+        if was_created:
+            return (
+                f"created '{NAVIGATOR_NAME}' with child "
+                f"'{CAMERA_NAME}' and '{RAY_NAME}'"
+            )
+        return f"'{NAVIGATOR_NAME}' already exists; selected it"
 
     return _safe("Create Navigation Null", _do)
 
