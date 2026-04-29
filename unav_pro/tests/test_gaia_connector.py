@@ -171,8 +171,8 @@ def test_normalize_full_row():
     objs = normalize_rows([row])
     assert len(objs) == 1
     o = objs[0]
-    assert o.uid == "gaia_dr3:1234567890"
-    assert o.catalog_source == "gaia_dr3"
+    assert o.uid == "gaia:1234567890"
+    assert o.catalog_source == "Gaia DR3"
     assert o.object_type == "star"
     assert o.ra_deg == 56.75
     assert o.dec_deg == 24.12
@@ -299,8 +299,8 @@ def test_fetch_and_normalize_returns_catalog_objects():
     fetcher, _ = _make_fetcher(body)
     q = GaiaQuery(ra_deg=10.0, dec_deg=20.0, radius_deg=0.5, limit=10)
     objs = fetch_and_normalize(q, fetch_fn=fetcher)
-    assert [o.uid for o in objs] == ["gaia_dr3:1", "gaia_dr3:3"]
-    assert all(o.catalog_source == DEFAULT_GAIA_RELEASE for o in objs)
+    assert [o.uid for o in objs] == ["gaia:1", "gaia:3"]
+    assert all(o.catalog_source == "Gaia DR3" for o in objs)
     assert all(o.object_type == "star" for o in objs)
 
 
@@ -312,5 +312,305 @@ def test_fetch_and_normalize_passes_release_through():
         limit=10, release="gaia_dr2",
     )
     objs = fetch_and_normalize(q, fetch_fn=fetcher)
-    assert objs[0].uid == "gaia_dr2:9"
-    assert objs[0].catalog_source == "gaia_dr2"
+    assert objs[0].uid == "gaia:9"
+    assert objs[0].catalog_source == "Gaia DR2"
+
+
+# ---------------------------------------------------------------------------
+# v0.3 — uid + catalog_source contract
+# ---------------------------------------------------------------------------
+
+
+def test_uid_format_is_gaia_prefix_only():
+    """Per v0.3: every emitted row's uid is ``gaia:{source_id}``,
+    not ``gaia_dr3:{source_id}``."""
+    row = {"source_id": "42", "ra": "10.0", "dec": "20.0"}
+    o = normalize_rows([row])[0]
+    assert o.uid == "gaia:42"
+    assert not o.uid.startswith("gaia_dr3:")
+    assert not o.uid.startswith("gaia_dr2:")
+
+
+def test_catalog_source_label_is_human_readable():
+    row = {"source_id": "1", "ra": "0.0", "dec": "0.0"}
+    o_dr3 = normalize_rows([row], release="gaia_dr3")[0]
+    o_dr2 = normalize_rows([row], release="gaia_dr2")[0]
+    assert o_dr3.catalog_source == "Gaia DR3"
+    assert o_dr2.catalog_source == "Gaia DR2"
+
+
+def test_metadata_json_preserves_release_and_raw_fields():
+    row = {
+        "source_id": "1",
+        "ra": "10.0", "dec": "20.0",
+        "parallax": "5.0", "parallax_error": "0.5",
+        "pmra": "1.5", "pmdec": "-2.0",
+        "radial_velocity": "12.3",
+        "phot_g_mean_mag": "8.4",
+        "bp_rp": "0.9",
+    }
+    import json as _json
+    extra = _json.loads(normalize_rows([row])[0].metadata_json)
+    assert extra["release"] == "gaia_dr3"
+    assert extra["source_id"] == "1"
+    assert extra["parallax_mas"] == 5.0
+    assert extra["pmra_masyr"] == 1.5
+    assert extra["bp_rp"] == 0.9
+
+
+# ---------------------------------------------------------------------------
+# Soft warnings
+# ---------------------------------------------------------------------------
+
+
+def test_soft_warnings_quiet_for_normal_query():
+    from data.connectors.gaia_connector import soft_warnings
+
+    q = GaiaQuery(ra_deg=56.75, dec_deg=24.12, radius_deg=1.0, limit=5_000)
+    assert soft_warnings(q) == []
+
+
+def test_soft_warnings_fires_for_large_limit():
+    from data.connectors.gaia_connector import (
+        SOFT_LIMIT_WARNING, soft_warnings,
+    )
+
+    q = GaiaQuery(
+        ra_deg=0.0, dec_deg=0.0, radius_deg=0.5,
+        limit=SOFT_LIMIT_WARNING + 1,
+    )
+    msgs = soft_warnings(q)
+    assert len(msgs) == 1
+    assert "limit" in msgs[0]
+    assert "spatial index" in msgs[0]
+
+
+def test_soft_warnings_fires_for_wide_radius():
+    from data.connectors.gaia_connector import (
+        SOFT_RADIUS_WARNING_DEG, soft_warnings,
+    )
+
+    q = GaiaQuery(
+        ra_deg=0.0, dec_deg=0.0,
+        radius_deg=SOFT_RADIUS_WARNING_DEG + 0.1, limit=100,
+    )
+    msgs = soft_warnings(q)
+    assert any("radius_deg" in m for m in msgs)
+
+
+def test_soft_warnings_can_combine():
+    from data.connectors.gaia_connector import soft_warnings
+
+    q = GaiaQuery(ra_deg=0.0, dec_deg=0.0, radius_deg=10.0, limit=80_000)
+    msgs = soft_warnings(q)
+    assert len(msgs) == 2
+
+
+# ---------------------------------------------------------------------------
+# fetch_normalize_and_write — CLI-friendly one-shot
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_normalize_and_write_writes_jsonl(tmp_path):
+    from data.connectors.gaia_connector import fetch_normalize_and_write
+
+    body = _csv(
+        "1,10.0,20.0,5.0,0.5,1.1,2.2,30.0,8.0,0.5",
+        "2,11.0,21.0,8.0,1.0,,,,9.0,0.4",
+    )
+    fetcher, _ = _make_fetcher(body)
+    q = GaiaQuery(ra_deg=10.0, dec_deg=20.0, radius_deg=0.5, limit=10)
+
+    out = tmp_path / "out.jsonl"
+    report = fetch_normalize_and_write(q, str(out), fetch_fn=fetcher)
+
+    assert report.object_count == 2
+    assert report.with_distance == 2
+    assert out.exists()
+    # Each line is a JSONL row with the v0.3 uid and source.
+    import json as _json
+    rows = [_json.loads(line) for line in out.read_text().splitlines()]
+    assert {r["uid"] for r in rows} == {"gaia:1", "gaia:2"}
+    assert all(r["catalog_source"] == "Gaia DR3" for r in rows)
+
+
+def test_fetch_normalize_and_write_creates_parent_dirs(tmp_path):
+    from data.connectors.gaia_connector import fetch_normalize_and_write
+
+    body = _csv("1,10.0,20.0,5.0,0.5,,,,9.0,")
+    fetcher, _ = _make_fetcher(body)
+    q = GaiaQuery(ra_deg=10.0, dec_deg=20.0, radius_deg=0.5, limit=10)
+
+    nested = tmp_path / "a" / "b" / "c.jsonl"
+    fetch_normalize_and_write(q, str(nested), fetch_fn=fetcher)
+    assert nested.exists()
+
+
+def test_fetch_normalize_and_write_optional_index_build(tmp_path):
+    from data.connectors.gaia_connector import fetch_normalize_and_write
+
+    body = _csv(
+        "1,10.0,20.0,5.0,0.5,,,,9.0,",
+        "2,11.0,21.0,8.0,1.0,,,,9.0,0.4",
+        "3,12.0,22.0,2.0,1.0,,,,11.0,0.5",  # SNR=2 < default; no distance
+    )
+    fetcher, _ = _make_fetcher(body)
+    q = GaiaQuery(ra_deg=10.0, dec_deg=20.0, radius_deg=0.5, limit=10)
+
+    out = tmp_path / "out.jsonl"
+    idx_dir = tmp_path / "idx"
+    report = fetch_normalize_and_write(
+        q, str(out), fetch_fn=fetcher,
+        build_index_dir=str(idx_dir),
+    )
+    assert report.index_path == str(idx_dir)
+    assert report.index_total_objects == 3
+    assert report.index_cell_count is not None and report.index_cell_count >= 1
+    # Manifest written.
+    assert (idx_dir / "index.json").exists()
+    # Chunks written.
+    chunks = list(idx_dir.rglob("*.jsonl"))
+    assert chunks
+
+
+def test_fetch_normalize_and_write_no_index_when_not_requested(tmp_path):
+    from data.connectors.gaia_connector import fetch_normalize_and_write
+
+    body = _csv("1,10.0,20.0,5.0,0.5,,,,9.0,")
+    fetcher, _ = _make_fetcher(body)
+    q = GaiaQuery(ra_deg=10.0, dec_deg=20.0, radius_deg=0.5, limit=10)
+    report = fetch_normalize_and_write(q, str(tmp_path / "x.jsonl"), fetch_fn=fetcher)
+    assert report.index_path is None
+    assert report.index_total_objects is None
+
+
+def test_fetch_normalize_and_write_carries_soft_warnings(tmp_path):
+    from data.connectors.gaia_connector import (
+        SOFT_LIMIT_WARNING, fetch_normalize_and_write,
+    )
+
+    body = _csv("1,10.0,20.0,5.0,0.5,,,,9.0,")
+    fetcher, _ = _make_fetcher(body)
+    q = GaiaQuery(
+        ra_deg=10.0, dec_deg=20.0, radius_deg=0.5,
+        limit=SOFT_LIMIT_WARNING + 100,
+    )
+    report = fetch_normalize_and_write(
+        q, str(tmp_path / "y.jsonl"), fetch_fn=fetcher,
+    )
+    assert any("limit" in w for w in report.warnings)
+
+
+# ---------------------------------------------------------------------------
+# CLI main — driven via mocked _http_fetch
+# ---------------------------------------------------------------------------
+
+
+def _import_cli_module():
+    """Locate ``tools/fetch_gaia_region.py`` and import it as a
+    module without depending on tools/ being on sys.path."""
+    import importlib.util
+    import os
+    here = os.path.dirname(os.path.abspath(__file__))
+    repo_root = os.path.abspath(os.path.join(here, os.pardir, os.pardir))
+    cli_path = os.path.join(repo_root, "tools", "fetch_gaia_region.py")
+    spec = importlib.util.spec_from_file_location(
+        "tools_fetch_gaia_region", cli_path,
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    return module
+
+
+def test_cli_main_writes_jsonl(monkeypatch, tmp_path):
+    cli = _import_cli_module()
+
+    body = _csv(
+        "1,10.0,20.0,5.0,0.5,,,,8.0,0.5",
+        "2,11.0,21.0,8.0,1.0,,,,9.0,0.4",
+    )
+
+    def fake_fetch(url, params):
+        return body
+
+    monkeypatch.setattr(
+        "data.connectors.gaia_connector._http_fetch", fake_fetch,
+    )
+
+    out = tmp_path / "g.jsonl"
+    rc = cli.main([
+        "--ra", "10.0", "--dec", "20.0", "--radius-deg", "0.5",
+        "--limit", "10", "--output", str(out), "--quiet",
+    ])
+    assert rc == 0
+    assert out.exists()
+
+
+def test_cli_main_invalid_args_returns_2(tmp_path):
+    cli = _import_cli_module()
+    rc = cli.main([
+        "--ra", "999.0",  # out of range
+        "--dec", "0.0", "--radius-deg", "0.5",
+        "--output", str(tmp_path / "x.jsonl"), "--quiet",
+    ])
+    assert rc == 2
+
+
+def test_cli_main_archive_failure_returns_3(monkeypatch, tmp_path):
+    from data.connectors.gaia_connector import GaiaQueryError
+
+    cli = _import_cli_module()
+
+    def boom(url, params):
+        raise GaiaQueryError("simulated network down")
+
+    monkeypatch.setattr(
+        "data.connectors.gaia_connector._http_fetch", boom,
+    )
+    rc = cli.main([
+        "--ra", "10.0", "--dec", "20.0", "--radius-deg", "0.5",
+        "--output", str(tmp_path / "x.jsonl"), "--quiet",
+    ])
+    assert rc == 3
+
+
+def test_cli_main_build_index_creates_index(monkeypatch, tmp_path):
+    cli = _import_cli_module()
+
+    body = _csv(
+        "1,10.0,20.0,5.0,0.5,,,,8.0,0.5",
+        "2,11.0,21.0,8.0,1.0,,,,9.0,0.4",
+    )
+    monkeypatch.setattr(
+        "data.connectors.gaia_connector._http_fetch",
+        lambda url, params: body,
+    )
+
+    out = tmp_path / "g.jsonl"
+    idx = tmp_path / "idx"
+    rc = cli.main([
+        "--ra", "10.0", "--dec", "20.0", "--radius-deg", "0.5",
+        "--output", str(out), "--build-index", str(idx), "--quiet",
+    ])
+    assert rc == 0
+    assert (idx / "index.json").exists()
+
+
+def test_cli_main_empty_result_warns_but_succeeds(
+    monkeypatch, tmp_path, capsys,
+):
+    cli = _import_cli_module()
+
+    monkeypatch.setattr(
+        "data.connectors.gaia_connector._http_fetch",
+        lambda url, params: _FAKE_CSV_HEADER + "\n",
+    )
+
+    out = tmp_path / "empty.jsonl"
+    rc = cli.main([
+        "--ra", "10.0", "--dec", "20.0", "--radius-deg", "0.5",
+        "--output", str(out), "--quiet",
+    ])
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert "0 usable rows" in captured.err

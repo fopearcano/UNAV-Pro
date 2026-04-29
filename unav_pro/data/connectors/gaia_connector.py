@@ -71,14 +71,33 @@ _RELEASE_TO_TABLE = {
     "gaia_dr2": "gaiadr2.gaia_source",
 }
 
+#: Human-readable ``catalog_source`` strings written into every
+#: emitted ``CatalogObject``. Distinct from the internal release
+#: token (``gaia_dr3``) which keeps appearing in ``metadata_json``
+#: for forensic traceability.
+_CATALOG_SOURCE_LABELS = {
+    "gaia_dr3": "Gaia DR3",
+    "gaia_dr2": "Gaia DR2",
+}
+
 #: Hard ceiling on row count, regardless of what the caller asks for.
 #: A polite limit on the public archive and a guardrail against typo'd
 #: --limit values.
 MAX_ROW_LIMIT = 100_000
 
+#: Above this many rows the CLI prints a soft warning (heavy query,
+#: slow archive response, large output file). The hard cap is still
+#: ``MAX_ROW_LIMIT`` — the soft warning fires *below* it so a user
+#: who deliberately asks for 80k still completes the query.
+SOFT_LIMIT_WARNING = 50_000
+
 #: Hard ceiling on cone radius (degrees). Beyond this the caller
 #: should be using HEALPix tiling, not single-region queries.
 MAX_RADIUS_DEG = 30.0
+
+#: Soft warning above this radius: a wide cone fetches too many
+#: candidates for the brightest-first row cap to be representative.
+SOFT_RADIUS_WARNING_DEG = 5.0
 
 #: Default parallax signal-to-noise floor. Below this we leave
 #: ``distance_parsec`` as None; the row still flows through.
@@ -294,15 +313,26 @@ def _row_to_object(
         parallax, parallax_err, snr_min=parallax_snr_min,
     )
 
+    # Preserve every Gaia field we asked for in the metadata_json so
+    # the inspector and any future analytics can read the raw record
+    # without re-querying.
     extra = {
         "source_id": source_id,
         "release": release,
+        "ra": ra,
+        "dec": dec,
+        "parallax_mas": parallax,
         "parallax_error_mas": parallax_err,
+        "pmra_masyr": _to_float(row.get("pmra")),
+        "pmdec_masyr": _to_float(row.get("pmdec")),
+        "radial_velocity_kms": _to_float(row.get("radial_velocity")),
+        "phot_g_mean_mag": _to_float(row.get("phot_g_mean_mag")),
+        "bp_rp": _to_float(row.get("bp_rp")),
     }
 
     return CatalogObject(
-        uid=f"{release}:{source_id}",
-        catalog_source=release,
+        uid=f"gaia:{source_id}",
+        catalog_source=_CATALOG_SOURCE_LABELS[release],
         object_type="star",
         ra_deg=ra,
         dec_deg=dec,
@@ -357,3 +387,106 @@ def fetch_and_normalize(
     return normalize_rows(
         rows, release=query.release, parallax_snr_min=parallax_snr_min,
     )
+
+
+# ---------------------------------------------------------------------------
+# Soft warnings (advisory only — never block a query)
+# ---------------------------------------------------------------------------
+
+
+def soft_warnings(query: GaiaQuery) -> List[str]:
+    """Return human-readable warnings for query parameters that are
+    technically valid but likely to disappoint the user. Empty list
+    when nothing's worth saying.
+
+    The hard caps live on ``GaiaQuery.__post_init__``; these are
+    advisory.
+    """
+    out: List[str] = []
+    if query.limit > SOFT_LIMIT_WARNING:
+        out.append(
+            f"limit={query.limit} is large (above {SOFT_LIMIT_WARNING}); "
+            "the public Gaia archive may be slow and the output file will "
+            "be sizeable. Consider tightening --radius-deg or building a "
+            "spatial index immediately afterwards."
+        )
+    if query.radius_deg > SOFT_RADIUS_WARNING_DEG:
+        out.append(
+            f"radius_deg={query.radius_deg} is wide (above "
+            f"{SOFT_RADIUS_WARNING_DEG}°); the brightest-first row cap "
+            "becomes less representative as the cone widens. For sky "
+            "surveys, prefer multiple smaller cones or HEALPix tiling."
+        )
+    return out
+
+
+# ---------------------------------------------------------------------------
+# CLI-friendly one-shot — fetch + normalize + write JSONL + optional index
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class FetchAndWriteReport:
+    """Outcome of ``fetch_normalize_and_write`` — for tests and the
+    CLI summary line."""
+
+    output_path: str
+    object_count: int = 0
+    with_distance: int = 0
+    warnings: List[str] = None  # type: ignore[assignment]
+    index_path: Optional[str] = None
+    index_total_objects: Optional[int] = None
+    index_cell_count: Optional[int] = None
+
+    def __post_init__(self) -> None:
+        if self.warnings is None:
+            self.warnings = []
+
+
+def fetch_normalize_and_write(
+    query: GaiaQuery,
+    output_path: str,
+    *,
+    fetch_fn: Optional[FetchFn] = None,
+    url: str = GAIA_TAP_SYNC_URL,
+    parallax_snr_min: float = DEFAULT_PARALLAX_SNR_MIN,
+    build_index_dir: Optional[str] = None,
+    index_chunk_size: int = 5_000,
+) -> FetchAndWriteReport:
+    """End-to-end: run the cone query, normalize to UNAV, write JSONL,
+    optionally build the spatial index. Pure CPython; the c4d host is
+    not involved.
+
+    Returns a ``FetchAndWriteReport`` describing what was written. Bad
+    rows are skipped at normalize time. Network / archive failures
+    raise ``GaiaQueryError`` (the CLI catches them).
+    """
+    objects = fetch_and_normalize(
+        query, fetch_fn=fetch_fn, url=url,
+        parallax_snr_min=parallax_snr_min,
+    )
+
+    # Local imports so this module stays cheap to import without the
+    # rest of the data layer in scope.
+    from data.catalog_io import write_catalog
+
+    write_catalog(objects, output_path, fmt="jsonl")
+
+    report = FetchAndWriteReport(
+        output_path=output_path,
+        object_count=len(objects),
+        with_distance=sum(1 for o in objects if o.distance_parsec is not None),
+        warnings=soft_warnings(query),
+    )
+
+    if build_index_dir:
+        from core.spatial_index import build_index
+
+        index = build_index(
+            objects, build_index_dir, chunk_size=index_chunk_size,
+        )
+        report.index_path = build_index_dir
+        report.index_total_objects = index.total_objects
+        report.index_cell_count = len(index.cells)
+
+    return report

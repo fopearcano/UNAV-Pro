@@ -93,6 +93,8 @@ Universal Navigator Pro**.
 
 ## Quick start (5 minutes)
 
+### A. Bundled-sample path (no internet required)
+
 ```text
 1. Open Cinema 4D 2023+.
 2. Extensions → Universal Navigator Pro.
@@ -108,6 +110,24 @@ Universal Navigator Pro**.
 Out of the box you get the bundled `sample_catalog_100.jsonl`
 (synthetic, deterministic, 60 stars + 25 galaxies + 10 quasars +
 5 nebulae) so the workflow is exercise-able without any download.
+
+### B. Gaia DR3 real-data path
+
+```bash
+# Offline preprocessing (no Cinema 4D needed)
+python tools/fetch_gaia_region.py \
+    --ra 56.75 --dec 24.12 --radius-deg 1.0 \
+    --limit 5000 \
+    --output data/catalogs/gaia_pleiades_sample.jsonl \
+    --build-index cache/gaia_pleiades
+```
+
+Then in C4D: **Dataset Manager… → Add Dataset** the JSONL,
+**Load Active Datasets**, **Create Navigation Null**, **Sync
+Visible Sector**. The plugin streams only the chunks the
+navigator's cone touches; the full Gaia subset never enters
+memory. Full walkthrough in
+[`docs/V0_3_GAIA_DR3_WORKFLOW.md`](docs/V0_3_GAIA_DR3_WORKFLOW.md).
 
 ---
 
@@ -258,6 +278,9 @@ the plugin's package layout is documented in [`docs/PLUGIN_STRUCTURE.md`](docs/P
   Python prototype bottlenecks, C++/Maxon SDK migration, GPU
   rendering, real-time sector streaming.
 * [`docs/INSTALL_C4D_2023_PLUS.md`](docs/INSTALL_C4D_2023_PLUS.md) — install + troubleshoot.
+* [`docs/V0_2_SECTOR_STREAMING_WORKFLOW.md`](docs/V0_2_SECTOR_STREAMING_WORKFLOW.md) — v0.2 streaming contract.
+* [`docs/V0_3_GAIA_DR3_WORKFLOW.md`](docs/V0_3_GAIA_DR3_WORKFLOW.md) — v0.3 Gaia regional import.
+* [`docs/GAIA_QUERY_LIMITS_AND_SAFETY.md`](docs/GAIA_QUERY_LIMITS_AND_SAFETY.md) — Gaia caps + safety.
 
 Per-feature deep docs:
 [`UNAV_PRO_ARCHITECTURE`](docs/UNAV_PRO_ARCHITECTURE.md) ·
