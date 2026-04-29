@@ -1,10 +1,19 @@
-"""Mock action handlers for the MVP dialog.
+"""Action handlers wired to the main dialog buttons.
 
-These functions stand in for real engine calls so the UI can be exercised
-end-to-end before any catalog data, spatial index, or particle generator
-is wired up. Each returns a short status string that the dialog appends
-to its log area. Failures are reported as strings — they never raise out
-to the C4D event loop.
+Originally a pure-mock module; now a mixed module:
+
+  * ``load_dataset`` — loads the bundled local sample catalog (no
+    network access). Falls back to a clear status message when the
+    sample is missing.
+  * ``generate_point_cloud`` — builds the ``UNAV_Starfield`` null
+    hierarchy in the active C4D document.
+  * ``clear_scene`` — removes only UNAV-tagged objects from the
+    active document.
+  * ``create_navigation_null`` — still a stub; the navigation
+    controller lands in a later phase.
+
+Every handler returns a short status string; failures are reported as
+strings so the dialog event loop never sees an exception.
 """
 
 from __future__ import annotations
@@ -15,11 +24,10 @@ from typing import Optional
 
 from .logging_util import get_logger
 
-_log = get_logger("mock")
+_log = get_logger("actions")
 
 
 def _safe(label: str, fn, *args, **kwargs) -> str:
-    """Run ``fn`` and return a status line; turn exceptions into messages."""
     started = time.monotonic()
     try:
         result = fn(*args, **kwargs)
@@ -33,56 +41,135 @@ def _safe(label: str, fn, *args, **kwargs) -> str:
         return msg
 
 
-def load_dataset(path: Optional[str] = None) -> str:
-    """Pretend to load a dataset from ``path``.
+# ---------------------------------------------------------------------------
+# Load Dataset
+# ---------------------------------------------------------------------------
 
-    With the path missing or non-existent we still succeed (mock mode);
-    we just report which fallback we took. This mirrors the eventual
-    real behavior where a missing cache triggers a clear, actionable
-    error rather than a stack trace.
+
+def load_dataset(path: Optional[str] = None) -> str:
+    """Load a UNAV catalog. ``path=None`` loads the bundled sample.
+
+    Reports the row count and source. Missing or corrupt files surface
+    as a status message rather than an exception.
     """
 
     def _do() -> str:
-        if path is None or path == "":
-            return "no path provided; using built-in mock dataset 'gaia_demo'"
-        if not os.path.exists(path):
-            return f"path not found ({path}); using built-in mock dataset 'gaia_demo'"
-        return f"mock-loaded dataset from {path}"
+        # Local imports keep the module importable in environments where
+        # the data layer's dependencies (none today) might not be set up.
+        from data.catalog_io import (
+            CatalogIOError,
+            default_sample_catalog_path,
+            load_catalog,
+        )
+
+        target = path or default_sample_catalog_path()
+        if not os.path.isfile(target):
+            return (
+                f"sample catalog not found at {target}; "
+                "run sample_catalog_generator.write_sample_catalog() to create it"
+            )
+        try:
+            objects = load_catalog(target)
+        except CatalogIOError as exc:
+            return f"could not load catalog: {exc}"
+        return f"loaded {len(objects)} objects from {os.path.basename(target)}"
 
     return _safe("Load Dataset", _do)
 
 
-def create_navigation_null() -> str:
-    """Pretend to create the navigation null in the active scene."""
+# ---------------------------------------------------------------------------
+# Create Navigation Null (still a stub)
+# ---------------------------------------------------------------------------
 
+
+def create_navigation_null() -> str:
     def _do() -> str:
-        # Real implementation will instantiate a c4d.BaseObject(c4d.Onull),
-        # name it "UNAV Navigator", insert it into the active document,
-        # and tag it with our navigator tag.
         return "mock navigation null 'UNAV Navigator' would be inserted into active doc"
 
     return _safe("Create Navigation Null", _do)
 
 
-def generate_point_cloud(point_count: int = 10000) -> str:
-    """Pretend to generate a point cloud of ``point_count`` synthetic stars."""
+# ---------------------------------------------------------------------------
+# Generate Point Cloud
+# ---------------------------------------------------------------------------
+
+
+def generate_point_cloud(
+    catalog_path: Optional[str] = None,
+    max_objects: Optional[int] = None,
+) -> str:
+    """Build the UNAV_Starfield from the bundled sample catalog (or
+    ``catalog_path`` if provided). Returns a status string.
+
+    Behavior:
+      * If Cinema 4D is unavailable (e.g. running outside the host),
+        reports the limitation and exits cleanly.
+      * If the catalog file is missing, reports it and exits cleanly.
+      * On success, builds the starfield and reports the count.
+    """
 
     def _do() -> str:
-        if point_count <= 0:
-            raise ValueError("point_count must be > 0")
-        # Real implementation will pull from the spatial index and push
-        # a buffer to the viewport particle layer.
-        return f"mock point cloud generated with {point_count} synthetic points"
+        try:
+            import c4d  # type: ignore
+            from c4d import documents  # type: ignore
+        except ImportError:
+            return "Cinema 4D not available; cannot generate point cloud"
+
+        from data.catalog_io import (
+            CatalogIOError,
+            default_sample_catalog_path,
+            load_catalog,
+        )
+        from c4d_objects.point_cloud_builder import build_starfield
+
+        target = catalog_path or default_sample_catalog_path()
+        if not os.path.isfile(target):
+            return f"catalog not found at {target}"
+
+        try:
+            objects = load_catalog(target)
+        except CatalogIOError as exc:
+            return f"could not load catalog: {exc}"
+
+        if max_objects is not None and max_objects >= 0:
+            objects = objects[:max_objects]
+
+        if not objects:
+            return "catalog is empty; nothing to generate"
+
+        doc = documents.GetActiveDocument()
+        if doc is None:
+            return "no active document; open a scene first"
+
+        _, count = build_starfield(doc, objects)
+        return f"generated {count} point objects under 'UNAV_Starfield'"
 
     return _safe("Generate Point Cloud", _do)
 
 
+# ---------------------------------------------------------------------------
+# Clear Scene (UNAV objects only)
+# ---------------------------------------------------------------------------
+
+
 def clear_scene() -> str:
-    """Pretend to remove all UNAV Pro objects from the active scene."""
+    """Remove every UNAV-tagged object from the active document. Other
+    objects in the scene are untouched."""
 
     def _do() -> str:
-        # Real implementation will walk the active doc, find UNAV-tagged
-        # objects, and remove them inside an undo block.
-        return "mock clear: would remove all UNAV objects from active doc"
+        try:
+            from c4d import documents  # type: ignore
+        except ImportError:
+            return "Cinema 4D not available; cannot clear scene"
+
+        from c4d_objects.point_cloud_builder import clear_starfield
+
+        doc = documents.GetActiveDocument()
+        if doc is None:
+            return "no active document"
+        removed = clear_starfield(doc)
+        if removed == 0:
+            return "no UNAV objects in scene"
+        return f"removed {removed} UNAV objects"
 
     return _safe("Clear Scene", _do)
