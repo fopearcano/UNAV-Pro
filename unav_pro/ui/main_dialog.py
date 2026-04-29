@@ -59,6 +59,7 @@ _ID_BTN_DATASET_MGR = 7001
 _ID_BTN_SAVE_STATE = 7002
 _ID_BTN_LOAD_STATE = 7003
 _ID_BTN_RESET_PREFS = 7004
+_ID_BTN_DIAGNOSTICS = 7005
 
 
 if _C4D_AVAILABLE:
@@ -118,7 +119,7 @@ if _C4D_AVAILABLE:
 
             # Buttons grid.
             self.GroupBegin(
-                _ID_GROUP_BUTTONS, c4d.BFH_SCALEFIT, cols=2, rows=7,
+                _ID_GROUP_BUTTONS, c4d.BFH_SCALEFIT, cols=2, rows=8,
                 title="Actions",
             )
             self.GroupBorderSpace(8, 8, 8, 8)
@@ -134,6 +135,7 @@ if _C4D_AVAILABLE:
             self.AddButton(_ID_BTN_SAVE_STATE, c4d.BFH_SCALEFIT, name="Save UNAV State")
             self.AddButton(_ID_BTN_LOAD_STATE, c4d.BFH_SCALEFIT, name="Load UNAV State")
             self.AddButton(_ID_BTN_RESET_PREFS, c4d.BFH_SCALEFIT, name="Reset Preferences")
+            self.AddButton(_ID_BTN_DIAGNOSTICS, c4d.BFH_SCALEFIT, name="Diagnostics…")
             self.GroupEnd()
 
             # Status log.
@@ -270,6 +272,8 @@ if _C4D_AVAILABLE:
                     self._append_log(mock_actions.load_unav_state())
                 elif mid == _ID_BTN_RESET_PREFS:
                     self._append_log(mock_actions.reset_preferences())
+                elif mid == _ID_BTN_DIAGNOSTICS:
+                    self._do_open_diagnostics()
                 elif mid == _ID_BTN_CLEAR_LOG:
                     self.SetString(_ID_LOG, "")
             except Exception as exc:  # noqa: BLE001 — UI boundary handler
@@ -389,6 +393,23 @@ if _C4D_AVAILABLE:
         # keep one instance per session so re-clicking the menu
         # reuses the same window.
         _dataset_dialog = None
+        _diagnostics_dialog = None
+
+        def _do_open_diagnostics(self) -> None:
+            from core.plugin_ids import PLUGIN_ID_DIAGNOSTICS_DIALOG
+            from ui.diagnostics_panel import UnavDiagnosticsDialog
+
+            if self._diagnostics_dialog is None:
+                self._diagnostics_dialog = UnavDiagnosticsDialog()
+            opened = self._diagnostics_dialog.Open(
+                dlgtype=c4d.DLG_TYPE_ASYNC,
+                pluginid=PLUGIN_ID_DIAGNOSTICS_DIALOG,
+                defaultw=620, defaulth=620,
+            )
+            self._append_log(
+                "Diagnostics: opened." if opened
+                else "Diagnostics: could not open window."
+            )
 
         def _do_open_dataset_manager(self) -> None:
             from core.plugin_ids import PLUGIN_ID_DATASET_DIALOG

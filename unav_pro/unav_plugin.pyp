@@ -50,6 +50,7 @@ except ImportError:
 
 try:
     from core.logging_util import init_logging, get_logger, log_file_path
+    from core.logger import install_ring_buffer
     from core.version_check import check_host
     from ui import main_command
 except Exception:  # noqa: BLE001 — startup boundary
@@ -62,6 +63,7 @@ except Exception:  # noqa: BLE001 — startup boundary
 
 def _register_all() -> None:
     log = get_logger("bootstrap")
+    install_ring_buffer()
     log.info("UNAV Pro starting (plugin root: %s).", _PLUGIN_ROOT)
 
     ok, message = check_host()
