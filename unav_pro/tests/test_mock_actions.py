@@ -36,3 +36,15 @@ def test_clear_scene_without_c4d_reports_cleanly():
     out = mock_actions.clear_scene()
     assert "Clear Scene" in out
     assert "Cinema 4D not available" in out
+
+
+def test_apply_view_filter_without_c4d_reports_cleanly():
+    out = mock_actions.apply_view_filter()
+    assert "Apply View Filter" in out
+    assert "Cinema 4D not available" in out
+
+
+def test_regenerate_visible_field_without_c4d_reports_cleanly():
+    out = mock_actions.regenerate_visible_field()
+    assert "Regenerate Visible Field" in out
+    assert "Cinema 4D not available" in out

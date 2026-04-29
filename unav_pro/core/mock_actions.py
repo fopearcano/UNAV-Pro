@@ -123,57 +123,214 @@ def create_navigation_null() -> str:
 # ---------------------------------------------------------------------------
 
 
+#: Fallback cap when no navigator is in the scene. Picked so the MVP
+#: never accidentally tries to materialize a million catalog objects.
+_NAVIGATOR_LESS_FALLBACK_CAP = 5_000
+
+
+def _load_objects_or_message(
+    catalog_path: Optional[str],
+):
+    """Load the bundled (or specified) catalog. Returns either
+    ``(objects, None)`` on success or ``(None, status_message)`` on
+    failure."""
+    from data.catalog_io import (
+        CatalogIOError,
+        default_sample_catalog_path,
+        load_catalog,
+    )
+
+    target = catalog_path or default_sample_catalog_path()
+    if not os.path.isfile(target):
+        return None, f"catalog not found at {target}"
+    try:
+        return load_catalog(target), None
+    except CatalogIOError as exc:
+        return None, f"could not load catalog: {exc}"
+
+
+def _filter_for_active_navigator(objects):
+    """Run the spatial filter against the active navigator, if any.
+
+    Returns ``(filtered_objects, status_fragment, used_filter)``.
+    ``status_fragment`` is a short human-friendly suffix appended to
+    the action's status line. If no navigator exists the input list is
+    returned unchanged with ``used_filter=False`` so the caller can
+    decide whether to warn or fall back.
+    """
+    from c4d import documents  # type: ignore
+
+    from c4d_objects.navigation_null import (
+        find_navigator,
+        get_navigation_filter_params,
+        get_navigation_forward_vector,
+        get_navigation_origin,
+    )
+    from core.spatial_filter import filter_for_navigator
+
+    doc = documents.GetActiveDocument()
+    if doc is None:
+        return objects, "no active document", False
+    nav = find_navigator(doc)
+    if nav is None:
+        return objects, "no UNAV_Navigator in scene", False
+
+    params = get_navigation_filter_params(nav)
+    origin = get_navigation_origin(nav)
+    forward = get_navigation_forward_vector(nav)
+    result = filter_for_navigator(
+        objects,
+        origin_c4d=(origin.x, origin.y, origin.z),
+        forward=(forward.x, forward.y, forward.z),
+        params=params,
+    )
+    return result.objects, result.stats.short_summary(), True
+
+
 def generate_point_cloud(
     catalog_path: Optional[str] = None,
     max_objects: Optional[int] = None,
 ) -> str:
-    """Build the UNAV_Starfield from the bundled sample catalog (or
-    ``catalog_path`` if provided). Returns a status string.
+    """Build the UNAV_Starfield from the bundled sample catalog.
 
     Behavior:
-      * If Cinema 4D is unavailable (e.g. running outside the host),
-        reports the limitation and exits cleanly.
-      * If the catalog file is missing, reports it and exits cleanly.
-      * On success, builds the starfield and reports the count.
+      * If a UNAV_Navigator exists, the catalog is filtered against
+        the navigator's pose and parameters before building. **The
+        full catalog is never materialized in the C4D scene.**
+      * If no navigator exists, only the first
+        ``_NAVIGATOR_LESS_FALLBACK_CAP`` objects are generated and a
+        warning is appended to the status.
+      * Missing catalog / missing C4D / empty result are all surfaced
+        as status strings rather than raised exceptions.
     """
 
     def _do() -> str:
         try:
-            import c4d  # type: ignore
             from c4d import documents  # type: ignore
         except ImportError:
             return "Cinema 4D not available; cannot generate point cloud"
 
-        from data.catalog_io import (
-            CatalogIOError,
-            default_sample_catalog_path,
-            load_catalog,
-        )
         from c4d_objects.point_cloud_builder import build_starfield
 
-        target = catalog_path or default_sample_catalog_path()
-        if not os.path.isfile(target):
-            return f"catalog not found at {target}"
-
-        try:
-            objects = load_catalog(target)
-        except CatalogIOError as exc:
-            return f"could not load catalog: {exc}"
-
-        if max_objects is not None and max_objects >= 0:
-            objects = objects[:max_objects]
+        objects, err = _load_objects_or_message(catalog_path)
+        if err is not None:
+            return err
 
         if not objects:
             return "catalog is empty; nothing to generate"
+
+        # Optional explicit cap from caller.
+        if max_objects is not None and max_objects >= 0:
+            objects = objects[:max_objects]
+
+        filtered, frag, used_filter = _filter_for_active_navigator(objects)
+
+        if not used_filter:
+            cap = _NAVIGATOR_LESS_FALLBACK_CAP
+            if len(filtered) > cap:
+                filtered = filtered[:cap]
+                suffix = (
+                    f"; warning: {frag}; capped to first {cap} objects "
+                    "(create a UNAV_Navigator to filter the full catalog)"
+                )
+            else:
+                suffix = f"; warning: {frag}; using full catalog"
+        else:
+            suffix = f"; filter: {frag}"
+
+        if not filtered:
+            return "no objects remain after filtering" + suffix
 
         doc = documents.GetActiveDocument()
         if doc is None:
             return "no active document; open a scene first"
 
-        _, count = build_starfield(doc, objects)
-        return f"generated {count} point objects under 'UNAV_Starfield'"
+        _, count = build_starfield(doc, filtered)
+        return (
+            f"generated {count} point objects under 'UNAV_Starfield'"
+            + suffix
+        )
 
     return _safe("Generate Point Cloud", _do)
+
+
+# ---------------------------------------------------------------------------
+# Apply View Filter / Regenerate Visible Field
+# ---------------------------------------------------------------------------
+
+
+def apply_view_filter(catalog_path: Optional[str] = None) -> str:
+    """Run the spatial filter against the active navigator and report
+    the rejection breakdown without touching the C4D scene.
+
+    Useful for tuning navigator parameters before committing to a
+    rebuild. Falls back to a clean status message if the navigator or
+    catalog is missing.
+    """
+
+    def _do() -> str:
+        try:
+            from c4d import documents  # type: ignore  # noqa: F401
+        except ImportError:
+            return "Cinema 4D not available; cannot apply view filter"
+
+        objects, err = _load_objects_or_message(catalog_path)
+        if err is not None:
+            return err
+        if not objects:
+            return "catalog is empty"
+
+        _filtered, frag, used_filter = _filter_for_active_navigator(objects)
+        if not used_filter:
+            return f"cannot filter: {frag}"
+        return f"filter result — {frag}"
+
+    return _safe("Apply View Filter", _do)
+
+
+def regenerate_visible_field(catalog_path: Optional[str] = None) -> str:
+    """Clear any existing UNAV_Starfield and rebuild it from the
+    current navigator's filter result. Equivalent to Clear Scene
+    followed by Generate Point Cloud, packaged as one click for the
+    common iterate-and-tweak workflow.
+    """
+
+    def _do() -> str:
+        try:
+            from c4d import documents  # type: ignore
+        except ImportError:
+            return "Cinema 4D not available; cannot regenerate"
+
+        from c4d_objects.point_cloud_builder import (
+            build_starfield,
+            clear_starfield,
+        )
+
+        objects, err = _load_objects_or_message(catalog_path)
+        if err is not None:
+            return err
+        if not objects:
+            return "catalog is empty"
+
+        filtered, frag, used_filter = _filter_for_active_navigator(objects)
+        if not used_filter:
+            return f"cannot regenerate without navigator: {frag}"
+        if not filtered:
+            return "no objects remain after filtering; " + frag
+
+        doc = documents.GetActiveDocument()
+        if doc is None:
+            return "no active document"
+
+        removed = clear_starfield(doc)
+        _, count = build_starfield(doc, filtered, replace_existing=False)
+        prefix = f"removed {removed} prior, " if removed else ""
+        return (
+            f"{prefix}generated {count} point objects under 'UNAV_Starfield'"
+            f"; filter: {frag}"
+        )
+
+    return _safe("Regenerate Visible Field", _do)
 
 
 # ---------------------------------------------------------------------------

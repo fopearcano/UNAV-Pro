@@ -30,6 +30,8 @@ _ID_BTN_LOAD = 1001
 _ID_BTN_NULL = 1002
 _ID_BTN_CLOUD = 1003
 _ID_BTN_CLEAR = 1004
+_ID_BTN_APPLY_FILTER = 1005
+_ID_BTN_REGENERATE = 1006
 _ID_GROUP_LOG = 2000
 _ID_LOG = 2001
 _ID_BTN_CLEAR_LOG = 2002
@@ -45,9 +47,9 @@ if _C4D_AVAILABLE:
         def CreateLayout(self) -> bool:
             self.SetTitle(self.TITLE)
 
-            # Buttons row.
+            # Buttons grid.
             self.GroupBegin(
-                _ID_GROUP_BUTTONS, c4d.BFH_SCALEFIT, cols=2, rows=2,
+                _ID_GROUP_BUTTONS, c4d.BFH_SCALEFIT, cols=2, rows=3,
                 title="Actions",
             )
             self.GroupBorderSpace(8, 8, 8, 8)
@@ -55,6 +57,8 @@ if _C4D_AVAILABLE:
             self.AddButton(_ID_BTN_NULL, c4d.BFH_SCALEFIT, name="Create Navigation Null")
             self.AddButton(_ID_BTN_CLOUD, c4d.BFH_SCALEFIT, name="Generate Point Cloud")
             self.AddButton(_ID_BTN_CLEAR, c4d.BFH_SCALEFIT, name="Clear Scene")
+            self.AddButton(_ID_BTN_APPLY_FILTER, c4d.BFH_SCALEFIT, name="Apply View Filter")
+            self.AddButton(_ID_BTN_REGENERATE, c4d.BFH_SCALEFIT, name="Regenerate Visible Field")
             self.GroupEnd()
 
             # Status log.
@@ -87,6 +91,10 @@ if _C4D_AVAILABLE:
                     self._append_log(mock_actions.generate_point_cloud())
                 elif mid == _ID_BTN_CLEAR:
                     self._append_log(mock_actions.clear_scene())
+                elif mid == _ID_BTN_APPLY_FILTER:
+                    self._append_log(mock_actions.apply_view_filter())
+                elif mid == _ID_BTN_REGENERATE:
+                    self._append_log(mock_actions.regenerate_visible_field())
                 elif mid == _ID_BTN_CLEAR_LOG:
                     self.SetString(_ID_LOG, "")
             except Exception as exc:  # noqa: BLE001 — UI boundary handler
