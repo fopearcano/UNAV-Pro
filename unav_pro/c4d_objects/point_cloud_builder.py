@@ -41,6 +41,7 @@ except ImportError:  # pragma: no cover — only true outside C4D
 
 from core.logging_util import get_logger
 from core.plugin_ids import BC_ID_UNAV_MARKER
+from core.visual_encoding import VisualEncodingParams, encode as encode_visuals
 from data.schema import (
     DEFAULT_SCALE_MODE,
     CatalogObject,
@@ -214,10 +215,18 @@ def is_unav_object(c4d_obj: "c4d.BaseObject") -> bool:
 
 
 def build_point_object(
-    obj: CatalogObject, scale_mode: str = DEFAULT_SCALE_MODE
+    obj: CatalogObject,
+    scale_mode: str = DEFAULT_SCALE_MODE,
+    encoding: Optional[VisualEncodingParams] = None,
 ) -> "c4d.BaseObject":
     """Create one C4D ``Onull`` representing ``obj``. Not yet inserted
-    into a document."""
+    into a document.
+
+    If ``encoding`` is given, it overrides the schema's default colour
+    and radius for this null. ``encoding=None`` keeps the schema's
+    natural-star rendering exactly as it was before this argument
+    existed.
+    """
     _require_c4d()
     null = c4d.BaseObject(c4d.Onull)
     null.SetName(display_label(obj))
@@ -225,8 +234,17 @@ def build_point_object(
     x, y, z = position_for_object(obj, scale_mode=scale_mode)
     null.SetAbsPos(c4d.Vector(x, y, z))
 
-    radius = radius_for_object(obj)
-    r, g, b = color_for_object(obj)
+    if encoding is None:
+        radius = radius_for_object(obj)
+        r, g, b = color_for_object(obj)
+    else:
+        rgb, raw_radius = encode_visuals(obj, encoding)
+        radius = float(raw_radius) * NULL_RADIUS_SCALE
+        r, g, b = (
+            max(0.0, min(1.0, rgb[0] / 255.0)),
+            max(0.0, min(1.0, rgb[1] / 255.0)),
+            max(0.0, min(1.0, rgb[2] / 255.0)),
+        )
 
     # Display: small dot, with our colour.
     null[c4d.NULLOBJECT_DISPLAY] = c4d.NULLOBJECT_DISPLAY_DOT
@@ -276,6 +294,7 @@ def build_starfield(
     objects: Iterable[CatalogObject],
     scale_mode: str = DEFAULT_SCALE_MODE,
     replace_existing: bool = True,
+    encoding: Optional[VisualEncodingParams] = None,
 ) -> Tuple["c4d.BaseObject", int]:
     """Create the UNAV_Starfield null and one child per catalog object.
 
@@ -283,6 +302,9 @@ def build_starfield(
     is True (default), any existing UNAV objects in the scene are
     removed first so re-running the action does not duplicate. The
     operation runs inside an undo block so a single Ctrl-Z reverts it.
+
+    ``encoding`` overrides the natural colour / radius mapping for
+    every child. ``None`` keeps the schema-default rendering.
     """
     _require_c4d()
 
@@ -298,7 +320,9 @@ def build_starfield(
         count = 0
         for obj in objects:
             try:
-                child = build_point_object(obj, scale_mode=scale_mode)
+                child = build_point_object(
+                    obj, scale_mode=scale_mode, encoding=encoding,
+                )
             except Exception:  # noqa: BLE001 — never let one bad row stop the build
                 _log.exception("Skipping bad object during build: uid=%r", getattr(obj, "uid", None))
                 continue
@@ -309,7 +333,12 @@ def build_starfield(
         doc.EndUndo()
 
     c4d.EventAdd()
-    _log.info("Built UNAV starfield with %d objects (scale=%s).", count, scale_mode)
+    _log.info(
+        "Built UNAV starfield with %d objects (scale=%s, color=%s, size=%s).",
+        count, scale_mode,
+        encoding.color_mode if encoding else "natural",
+        encoding.size_mode if encoding else "magnitude",
+    )
     return parent, count
 
 

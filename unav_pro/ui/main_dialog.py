@@ -39,6 +39,12 @@ _ID_LOG = 2001
 _ID_BTN_CLEAR_LOG = 2002
 _ID_GROUP_META = 3000
 _ID_META_PANEL = 3001
+_ID_GROUP_VISUAL = 4000
+_ID_COMBO_COLOR_MODE = 4001
+_ID_NUM_SIZE_SCALE = 4002
+_ID_NUM_BRIGHTNESS_SCALE = 4003
+# Combo-box items live in a private id range; offset from the combo id.
+_COMBO_BASE = 4100
 
 
 if _C4D_AVAILABLE:
@@ -50,6 +56,33 @@ if _C4D_AVAILABLE:
 
         def CreateLayout(self) -> bool:
             self.SetTitle(self.TITLE)
+
+            # Visual encoding controls.
+            from core.visual_encoding import COLOR_MODE_LABELS
+
+            self.GroupBegin(
+                _ID_GROUP_VISUAL, c4d.BFH_SCALEFIT, cols=2, rows=3,
+                title="Display",
+            )
+            self.GroupBorderSpace(8, 8, 8, 8)
+            self.AddStaticText(0, c4d.BFH_LEFT, name="Color mode")
+            self.AddComboBox(_ID_COMBO_COLOR_MODE, c4d.BFH_SCALEFIT)
+            for i, (label, _token) in enumerate(COLOR_MODE_LABELS):
+                self.AddChild(_ID_COMBO_COLOR_MODE, _COMBO_BASE + i, label)
+            self.SetInt32(_ID_COMBO_COLOR_MODE, _COMBO_BASE)  # default = first
+
+            self.AddStaticText(0, c4d.BFH_LEFT, name="Size scale")
+            self.AddEditNumberArrows(_ID_NUM_SIZE_SCALE, c4d.BFH_SCALEFIT)
+            self.SetFloat(
+                _ID_NUM_SIZE_SCALE, 1.0, min=0.01, max=100.0, step=0.1,
+            )
+
+            self.AddStaticText(0, c4d.BFH_LEFT, name="Brightness scale")
+            self.AddEditNumberArrows(_ID_NUM_BRIGHTNESS_SCALE, c4d.BFH_SCALEFIT)
+            self.SetFloat(
+                _ID_NUM_BRIGHTNESS_SCALE, 1.0, min=0.01, max=100.0, step=0.1,
+            )
+            self.GroupEnd()
 
             # Buttons grid.
             self.GroupBegin(
@@ -115,13 +148,21 @@ if _C4D_AVAILABLE:
                 elif mid == _ID_BTN_NULL:
                     self._append_log(mock_actions.create_navigation_null())
                 elif mid == _ID_BTN_CLOUD:
-                    self._append_log(mock_actions.generate_point_cloud())
+                    self._append_log(
+                        mock_actions.generate_point_cloud(
+                            encoding=self._read_encoding(),
+                        )
+                    )
                 elif mid == _ID_BTN_CLEAR:
                     self._append_log(mock_actions.clear_scene())
                 elif mid == _ID_BTN_APPLY_FILTER:
                     self._append_log(mock_actions.apply_view_filter())
                 elif mid == _ID_BTN_REGENERATE:
-                    self._append_log(mock_actions.regenerate_visible_field())
+                    self._append_log(
+                        mock_actions.regenerate_visible_field(
+                            encoding=self._read_encoding(),
+                        )
+                    )
                 elif mid == _ID_BTN_INSPECT:
                     self._do_inspect()
                 elif mid == _ID_BTN_COPY_META:
@@ -139,6 +180,32 @@ if _C4D_AVAILABLE:
             current = self.GetString(_ID_LOG) or ""
             new_text = (current + line + "\n") if current else (line + "\n")
             self.SetString(_ID_LOG, new_text)
+
+        def _read_encoding(self):
+            """Snapshot the current dropdown + scale values into a
+            ``VisualEncodingParams`` instance. Out-of-range values
+            (or a missing host) fall back to defaults."""
+            from core.visual_encoding import (
+                COLOR_MODE_LABELS,
+                VisualEncodingParams,
+            )
+            try:
+                combo_idx = int(self.GetInt32(_ID_COMBO_COLOR_MODE))
+                size_scale = float(self.GetFloat(_ID_NUM_SIZE_SCALE))
+                brightness_scale = float(self.GetFloat(_ID_NUM_BRIGHTNESS_SCALE))
+            except Exception:  # noqa: BLE001 — never fail at the UI boundary
+                return VisualEncodingParams()
+            mode_pos = max(0, combo_idx - _COMBO_BASE)
+            mode_pos = min(mode_pos, len(COLOR_MODE_LABELS) - 1)
+            color_mode = COLOR_MODE_LABELS[mode_pos][1]
+            try:
+                return VisualEncodingParams(
+                    color_mode=color_mode,
+                    size_scale=size_scale if size_scale > 0 else 1.0,
+                    brightness_scale=brightness_scale if brightness_scale > 0 else 1.0,
+                )
+            except ValueError:
+                return VisualEncodingParams()
 
         def _do_inspect(self) -> None:
             from ui.metadata_panel import inspect_active_selection

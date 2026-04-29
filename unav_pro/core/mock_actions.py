@@ -190,6 +190,7 @@ def _filter_for_active_navigator(objects):
 def generate_point_cloud(
     catalog_path: Optional[str] = None,
     max_objects: Optional[int] = None,
+    encoding=None,
 ) -> str:
     """Build the UNAV_Starfield from the bundled sample catalog.
 
@@ -245,7 +246,7 @@ def generate_point_cloud(
         if doc is None:
             return "no active document; open a scene first"
 
-        _, count = build_starfield(doc, filtered)
+        _, count = build_starfield(doc, filtered, encoding=encoding)
         return (
             f"generated {count} point objects under 'UNAV_Starfield'"
             + suffix
@@ -288,7 +289,10 @@ def apply_view_filter(catalog_path: Optional[str] = None) -> str:
     return _safe("Apply View Filter", _do)
 
 
-def regenerate_visible_field(catalog_path: Optional[str] = None) -> str:
+def regenerate_visible_field(
+    catalog_path: Optional[str] = None,
+    encoding=None,
+) -> str:
     """Clear any existing UNAV_Starfield and rebuild it from the
     current navigator's filter result. Equivalent to Clear Scene
     followed by Generate Point Cloud, packaged as one click for the
@@ -323,7 +327,9 @@ def regenerate_visible_field(catalog_path: Optional[str] = None) -> str:
             return "no active document"
 
         removed = clear_starfield(doc)
-        _, count = build_starfield(doc, filtered, replace_existing=False)
+        _, count = build_starfield(
+            doc, filtered, replace_existing=False, encoding=encoding,
+        )
         prefix = f"removed {removed} prior, " if removed else ""
         return (
             f"{prefix}generated {count} point objects under 'UNAV_Starfield'"
