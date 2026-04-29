@@ -103,10 +103,14 @@ class DatasetManagerController:
 
     # ---------------------------------------------------------- table view
     def panel_text(self) -> str:
+        """Multi-line text rendering of the registry for the dialog
+        panel."""
         return render_registry(self.registry)
 
     # ------------------------------------------------------------ actions
     def add_dataset(self, path: str) -> str:
+        """Register the catalog at ``path``. Scans on add for stats.
+        Returns a status string; never raises."""
         if not path:
             return "Add Dataset: cancelled."
         try:
@@ -120,6 +124,7 @@ class DatasetManagerController:
         return f"Add Dataset: '{entry.name}' registered{suffix}."
 
     def remove_dataset(self, name: str) -> str:
+        """Drop ``name`` from the registry. Returns a status string."""
         if not name:
             return "Remove Dataset: nothing selected."
         removed = self.registry.remove(name)
@@ -129,6 +134,7 @@ class DatasetManagerController:
         return f"Remove Dataset: '{name}' removed."
 
     def toggle_enabled(self, name: str) -> str:
+        """Flip the enabled flag on ``name``. Persists the change."""
         if not name:
             return "Toggle Enabled: nothing selected."
         entry = self.registry.find(name)
@@ -140,6 +146,7 @@ class DatasetManagerController:
         return f"Toggle Enabled: '{name}' {state}."
 
     def refresh_stats(self, name: str) -> str:
+        """Rescan the catalog file behind ``name`` and update stats."""
         if not name:
             return "Refresh: nothing selected."
         entry = self.registry.rescan(name)
@@ -156,6 +163,8 @@ class DatasetManagerController:
         )
 
     def build_index(self, name: str) -> str:
+        """Build the chunked spatial index for ``name``'s catalog and
+        record the resulting cache directory on the entry."""
         if not name:
             return "Build Index: nothing selected."
         entry = self.registry.find(name)
@@ -192,6 +201,8 @@ class DatasetManagerController:
         )
 
     def load_active(self) -> str:
+        """Merge every enabled dataset into a fresh ``MetadataLookup``
+        and install it as the process default."""
         merge = self.registry.merge_active()
         if merge.total_objects == 0 and not merge.errors:
             return "Load Active: no enabled datasets."

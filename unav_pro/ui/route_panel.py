@@ -32,11 +32,8 @@ except ImportError:  # pragma: no cover — only true outside C4D
 
 from c4d_objects.point_cloud_builder import (
     MARKER_KEY_CATALOG_SOURCE,
-    MARKER_KEY_DEC_DEG,
-    MARKER_KEY_DISTANCE_PC,
     MARKER_KEY_NAME,
     MARKER_KEY_OBJECT_TYPE,
-    MARKER_KEY_RA_DEG,
     MARKER_KEY_UID,
     _named_kind_marker,
     _read_marker,

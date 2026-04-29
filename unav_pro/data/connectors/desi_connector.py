@@ -38,16 +38,19 @@ bit decoding, and known limitations.
 
 from __future__ import annotations
 
-import csv
-import io
 import json
 import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from core.logging_util import get_logger
+from data.connectors._normalize import (
+    parse_csv as _parse_csv,
+    to_float as _to_float,
+    to_int as _to_int,
+)
 from data.schema import CatalogObject
 
 _log = get_logger("data.connectors.desi")
@@ -233,45 +236,9 @@ def fetch_rows(
     return list(_parse_csv(body))
 
 
-def _parse_csv(body: str) -> Iterable[Dict[str, str]]:
-    if not body:
-        return iter([])
-    reader = csv.DictReader(io.StringIO(body))
-    if reader.fieldnames is None:
-        return iter([])
-    return reader
-
-
 # ---------------------------------------------------------------------------
 # Normalize
 # ---------------------------------------------------------------------------
-
-
-def _to_float(s: Any) -> Optional[float]:
-    if s is None:
-        return None
-    if isinstance(s, float):
-        return s
-    text = str(s).strip()
-    if not text or text.lower() in {"null", "nan", "none"}:
-        return None
-    try:
-        v = float(text)
-    except (TypeError, ValueError):
-        return None
-    if v != v:
-        return None
-    return v
-
-
-def _to_int(s: Any) -> Optional[int]:
-    f = _to_float(s)
-    if f is None:
-        return None
-    try:
-        return int(f)
-    except (TypeError, ValueError, OverflowError):
-        return None
 
 
 def safe_redshift_to_distance(

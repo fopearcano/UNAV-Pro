@@ -60,3 +60,32 @@ def test_toggle_debug_cone_without_c4d_reports_cleanly():
     out = mock_actions.toggle_debug_cone(True)
     assert "Debug Cone" in out
     assert "Cinema 4D not available" in out
+
+
+# ---------------------------------------------------------------------------
+# _active_document helper — refactor regression guard
+# ---------------------------------------------------------------------------
+
+
+def test_active_document_outside_c4d_returns_clear_error():
+    """The helper that every scene-touching action shares must report
+    'Cinema 4D not available' uniformly."""
+    doc, err = mock_actions._active_document("do something")
+    assert doc is None
+    assert err is not None
+    assert "Cinema 4D not available" in err
+    # The verb is interpolated so the error mentions what the action
+    # was trying to do.
+    assert "do something" in err.lower()
+
+
+def test_save_unav_state_without_c4d_reports_cleanly():
+    out = mock_actions.save_unav_state()
+    assert "Save UNAV State" in out
+    assert "Cinema 4D not available" in out
+
+
+def test_load_unav_state_without_c4d_reports_cleanly():
+    out = mock_actions.load_unav_state()
+    assert "Load UNAV State" in out
+    assert "Cinema 4D not available" in out

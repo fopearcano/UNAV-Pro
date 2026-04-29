@@ -129,32 +129,14 @@ def _require_c4d() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Marker helpers
+# Marker helpers — shared with c4d_objects.point_cloud_builder so the
+# marker container has exactly one writer / reader pair across the
+# whole plugin.
 # ---------------------------------------------------------------------------
 
-
-def _write_marker(c4d_obj: "c4d.BaseObject", payload: Dict[int, Any]) -> None:
-    _require_c4d()
-    bc = c4d.BaseContainer()
-    for key, value in payload.items():
-        bc[key] = value
-    c4d_obj.GetDataInstance().SetContainer(BC_ID_UNAV_MARKER, bc)
-
-
-def _read_marker(c4d_obj: "c4d.BaseObject") -> Optional[Dict[int, Any]]:
-    _require_c4d()
-    data = c4d_obj.GetDataInstance()
-    if data is None:
-        return None
-    sub = data.GetContainerInstance(BC_ID_UNAV_MARKER)
-    if sub is None:
-        return None
-    out: Dict[int, Any] = {}
-    for key, value in sub:
-        out[key] = value
-    if not out.get(MARKER_KEY_IS_UNAV):
-        return None
-    return out
+from c4d_objects.point_cloud_builder import (  # noqa: E402  (after constants)
+    _read_marker, _write_marker,
+)
 
 
 def _navigator_marker(params: NavigationParams) -> Dict[int, Any]:

@@ -38,10 +38,7 @@ mapping, and known limitations.
 
 from __future__ import annotations
 
-import csv
-import io
 import json
-import math
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -49,6 +46,11 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from core.logging_util import get_logger
+from data.connectors._normalize import (
+    parse_csv as _parse_csv_base,
+    to_float as _to_float,
+    to_int as _to_int,
+)
 from data.schema import CatalogObject
 
 _log = get_logger("data.connectors.sdss")
@@ -242,55 +244,16 @@ def fetch_rows(
 def _parse_csv(body: str) -> Iterable[Dict[str, str]]:
     """Parse a SkyServer CSV response.
 
-    SkyServer prepends a comment line beginning with ``#`` to many
-    responses; ``csv.DictReader`` handles that as a header row, so we
-    strip leading ``#``-only lines first.
+    SkyServer prepends a banner comment beginning with ``#`` to many
+    responses; the shared parser strips those before reading the
+    real header row.
     """
-    if not body:
-        return iter([])
-    # Drop leading comment lines that aren't valid CSV headers.
-    lines = body.splitlines()
-    while lines and lines[0].lstrip().startswith("#"):
-        lines.pop(0)
-    if not lines:
-        return iter([])
-    cleaned = "\n".join(lines)
-    reader = csv.DictReader(io.StringIO(cleaned))
-    if reader.fieldnames is None:
-        return iter([])
-    return reader
+    return _parse_csv_base(body, strip_leading_comments=True)
 
 
 # ---------------------------------------------------------------------------
 # Normalize
 # ---------------------------------------------------------------------------
-
-
-def _to_float(s: Any) -> Optional[float]:
-    if s is None:
-        return None
-    if isinstance(s, float):
-        return s
-    text = str(s).strip()
-    if not text or text.lower() in {"null", "nan", "none"}:
-        return None
-    try:
-        v = float(text)
-    except (TypeError, ValueError):
-        return None
-    if v != v:
-        return None
-    return v
-
-
-def _to_int(s: Any) -> Optional[int]:
-    f = _to_float(s)
-    if f is None:
-        return None
-    try:
-        return int(f)
-    except (TypeError, ValueError, OverflowError):
-        return None
 
 
 def _resolve_object_type(

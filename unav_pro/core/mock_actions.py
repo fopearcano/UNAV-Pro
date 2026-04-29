@@ -28,6 +28,13 @@ _log = get_logger("actions")
 
 
 def _safe(label: str, fn, *args, **kwargs) -> str:
+    """Wrap an action body so exceptions never leak into the dialog.
+
+    Adds the ``label`` prefix and the elapsed-ms suffix the dialog's
+    status log expects. Returns ``"<label> FAILED: <repr>"`` on any
+    raise; the traceback is logged at ``ERROR`` level so the
+    diagnostics dialog can show it.
+    """
     started = time.monotonic()
     try:
         result = fn(*args, **kwargs)
@@ -39,6 +46,28 @@ def _safe(label: str, fn, *args, **kwargs) -> str:
         msg = f"{label} FAILED: {exc!r}"
         _log.exception(msg)
         return msg
+
+
+def _active_document(label: str):
+    """Return ``(doc, error_message)``.
+
+    ``doc`` is the active C4D ``BaseDocument`` when the host is
+    available and a document is open; ``error_message`` is a status
+    string ready to return from the action when either is missing.
+    Exactly one of the two is non-None.
+
+    Centralizes the c4d-not-available + no-active-document path that
+    every scene-touching action would otherwise duplicate.
+    """
+    try:
+        from c4d import documents  # type: ignore
+    except ImportError:
+        verb = label.lower() if label else "perform action"
+        return None, f"Cinema 4D not available; cannot {verb}"
+    doc = documents.GetActiveDocument()
+    if doc is None:
+        return None, "no active document; open a scene first"
+    return doc, None
 
 
 # ---------------------------------------------------------------------------
@@ -91,10 +120,9 @@ def create_navigation_null() -> str:
     """
 
     def _do() -> str:
-        try:
-            from c4d import documents  # type: ignore
-        except ImportError:
-            return "Cinema 4D not available; cannot create navigation null"
+        doc, err = _active_document("create navigation null")
+        if err is not None:
+            return err
 
         from c4d_objects.navigation_null import (
             CAMERA_NAME,
@@ -102,10 +130,6 @@ def create_navigation_null() -> str:
             RAY_NAME,
             ensure_navigator,
         )
-
-        doc = documents.GetActiveDocument()
-        if doc is None:
-            return "no active document; open a scene first"
 
         _, was_created = ensure_navigator(doc)
         if was_created:
@@ -207,10 +231,9 @@ def generate_point_cloud(
     """
 
     def _do() -> str:
-        try:
-            from c4d import documents  # type: ignore
-        except ImportError:
-            return "Cinema 4D not available; cannot generate point cloud"
+        doc, err = _active_document("generate point cloud")
+        if err is not None:
+            return err
 
         from c4d_objects.point_cloud_builder import build_starfield
         from c4d_objects.navigation_null import find_navigator
@@ -220,9 +243,9 @@ def generate_point_cloud(
 
         limits = safety_limits or SafetyLimits()
 
-        objects, err = _load_objects_or_message(catalog_path)
-        if err is not None:
-            return err
+        objects, load_err = _load_objects_or_message(catalog_path)
+        if load_err is not None:
+            return load_err
 
         if not objects:
             return "catalog is empty; nothing to generate"
@@ -248,10 +271,6 @@ def generate_point_cloud(
 
         if not filtered:
             return "no objects remain after filtering" + suffix
-
-        doc = documents.GetActiveDocument()
-        if doc is None:
-            return "no active document; open a scene first"
 
         # Safety gate. Block / warn / allow based on the active limits.
         has_navigator = find_navigator(doc) is not None
@@ -290,14 +309,14 @@ def apply_view_filter(catalog_path: Optional[str] = None) -> str:
     """
 
     def _do() -> str:
-        try:
-            from c4d import documents  # type: ignore  # noqa: F401
-        except ImportError:
-            return "Cinema 4D not available; cannot apply view filter"
-
-        objects, err = _load_objects_or_message(catalog_path)
+        doc, err = _active_document("apply view filter")
         if err is not None:
             return err
+        del doc  # only used to surface "no active document" cleanly
+
+        objects, load_err = _load_objects_or_message(catalog_path)
+        if load_err is not None:
+            return load_err
         if not objects:
             return "catalog is empty"
 
@@ -324,26 +343,21 @@ def sync_visible_sector(
     """
 
     def _do() -> str:
-        try:
-            from c4d import documents  # type: ignore
-        except ImportError:
-            return "Cinema 4D not available; cannot sync"
+        doc, err = _active_document("sync visible sector")
+        if err is not None:
+            return err
 
         from core.scene_sync import sync_visible_sector as do_sync
 
-        objects, err = _load_objects_or_message(catalog_path)
-        if err is not None:
-            return err
+        objects, load_err = _load_objects_or_message(catalog_path)
+        if load_err is not None:
+            return load_err
         if not objects:
             return "catalog is empty"
 
         filtered, frag, used_filter = _filter_for_active_navigator(objects)
         if not used_filter:
             return f"cannot sync without navigator: {frag}"
-
-        doc = documents.GetActiveDocument()
-        if doc is None:
-            return "no active document"
 
         # Determine the scene scale + max_visible from the navigator
         # so the sync respects the navigator's hard cap.
@@ -373,15 +387,10 @@ def toggle_debug_cone(show: bool) -> str:
     """Show or hide the debug cone independently of a sync pass."""
 
     def _do() -> str:
-        try:
-            from c4d import documents  # type: ignore
-        except ImportError:
-            return "Cinema 4D not available"
+        doc, err = _active_document("toggle debug cone")
+        if err is not None:
+            return err
         from core.scene_sync import update_debug_cone
-
-        doc = documents.GetActiveDocument()
-        if doc is None:
-            return "no active document"
         return update_debug_cone(doc, show=bool(show))
 
     return _safe("Debug Cone", _do)
@@ -398,19 +407,18 @@ def regenerate_visible_field(
     """
 
     def _do() -> str:
-        try:
-            from c4d import documents  # type: ignore
-        except ImportError:
-            return "Cinema 4D not available; cannot regenerate"
+        doc, err = _active_document("regenerate visible field")
+        if err is not None:
+            return err
 
         from c4d_objects.point_cloud_builder import (
             build_starfield,
             clear_starfield,
         )
 
-        objects, err = _load_objects_or_message(catalog_path)
-        if err is not None:
-            return err
+        objects, load_err = _load_objects_or_message(catalog_path)
+        if load_err is not None:
+            return load_err
         if not objects:
             return "catalog is empty"
 
@@ -419,10 +427,6 @@ def regenerate_visible_field(
             return f"cannot regenerate without navigator: {frag}"
         if not filtered:
             return "no objects remain after filtering; " + frag
-
-        doc = documents.GetActiveDocument()
-        if doc is None:
-            return "no active document"
 
         removed = clear_starfield(doc)
         _, count = build_starfield(
@@ -447,16 +451,12 @@ def clear_scene() -> str:
     objects in the scene are untouched."""
 
     def _do() -> str:
-        try:
-            from c4d import documents  # type: ignore
-        except ImportError:
-            return "Cinema 4D not available; cannot clear scene"
+        doc, err = _active_document("clear scene")
+        if err is not None:
+            return err
 
         from c4d_objects.point_cloud_builder import clear_starfield
 
-        doc = documents.GetActiveDocument()
-        if doc is None:
-            return "no active document"
         removed = clear_starfield(doc)
         if removed == 0:
             return "no UNAV objects in scene"
@@ -490,10 +490,9 @@ def save_unav_state(
     """
 
     def _do() -> str:
-        try:
-            from c4d import documents  # type: ignore
-        except ImportError:
-            return "Cinema 4D not available; cannot save state"
+        doc, err = _active_document("save UNAV state")
+        if err is not None:
+            return err
 
         from core.dataset_registry import (
             DatasetRegistry, default_registry_path,
@@ -501,10 +500,6 @@ def save_unav_state(
         from core.project_state import (
             gather_project_state, save_project_state, sidecar_path_for,
         )
-
-        doc = documents.GetActiveDocument()
-        if doc is None:
-            return "no active document"
 
         # Read live navigator params, if any.
         navigator_params = None
@@ -536,15 +531,27 @@ def save_unav_state(
         sidecar = sidecar_path_for(scene_path)
         wrote = save_project_state(state, sidecar)
 
-        # Scene-level BaseContainer slot.
+        # Scene-level BaseContainer slot. Failures here mean the
+        # state will not travel with the .c4d save, but the sidecar
+        # JSON still survives — log + report rather than silently
+        # claim success.
+        scene_container_ok = True
         try:
             doc.GetDataInstance()[_BC_ID_UNAV_STATE] = state.to_json()
-        except Exception:  # noqa: BLE001 — defensive
-            pass
+        except Exception as exc:  # noqa: BLE001 — boundary handler
+            scene_container_ok = False
+            _log.warning("Could not write state to scene container: %s", exc)
 
+        scene_marker = "✓" if scene_container_ok else "FAILED"
         if wrote is None:
-            return "Save UNAV State: scene container ✓; sidecar write failed."
-        return f"Save UNAV State: scene container ✓; sidecar at {wrote}"
+            return (
+                f"Save UNAV State: scene container {scene_marker}; "
+                "sidecar write failed."
+            )
+        return (
+            f"Save UNAV State: scene container {scene_marker}; "
+            f"sidecar at {wrote}"
+        )
 
     return _safe("Save UNAV State", _do)
 
@@ -556,10 +563,9 @@ def load_unav_state() -> str:
     a status."""
 
     def _do() -> str:
-        try:
-            from c4d import documents  # type: ignore
-        except ImportError:
-            return "Cinema 4D not available; cannot load state"
+        doc, err = _active_document("load UNAV state")
+        if err is not None:
+            return err
 
         from core.dataset_registry import (
             DatasetRegistry, default_registry_path,
@@ -569,16 +575,13 @@ def load_unav_state() -> str:
             sidecar_path_for,
         )
 
-        doc = documents.GetActiveDocument()
-        if doc is None:
-            return "no active document"
-
         # 1. Try the document's BaseContainer (scene-level metadata).
         state: ProjectState = ProjectState()
         source = "none"
         try:
             raw = doc.GetDataInstance().GetString(_BC_ID_UNAV_STATE)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 — boundary handler
+            _log.warning("Could not read state from scene container: %s", exc)
             raw = ""
         if raw:
             state = ProjectState.from_json(raw)

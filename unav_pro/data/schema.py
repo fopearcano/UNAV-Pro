@@ -170,19 +170,20 @@ class CatalogObject:
 
     # ------------------------------------------------------------------ dict
     def to_dict(self) -> Dict[str, Any]:
+        """JSON-friendly dict view. Coerces ``display_color_rgb`` to a
+        list because tuples don't round-trip through JSON."""
         d = asdict(self)
-        # Tuples don't roundtrip through JSON as tuples; keep as list.
         if d.get("display_color_rgb") is not None:
             d["display_color_rgb"] = list(d["display_color_rgb"])
         return d
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "CatalogObject":
-        # Accept either tuple or list for display_color_rgb.
+        """Inverse of :meth:`to_dict`. Drops unknown keys so a future
+        schema can be opened by an older plugin."""
         if "display_color_rgb" in d and d["display_color_rgb"] is not None:
             d = dict(d)
             d["display_color_rgb"] = tuple(d["display_color_rgb"])  # type: ignore[arg-type]
-        # Drop unknown keys to stay forward-compatible.
         known = {f.name for f in fields(cls)}
         clean = {k: v for k, v in d.items() if k in known}
         return cls(**clean)

@@ -48,16 +48,15 @@ strict subset (the local-format schema in
 
 from __future__ import annotations
 
-import csv
-import io
 import json
 import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from core.logging_util import get_logger
+from data.connectors._normalize import parse_csv as _parse_csv, to_float as _to_float
 from data.schema import CatalogObject
 
 _log = get_logger("data.connectors.gaia")
@@ -240,37 +239,9 @@ def fetch_rows(
     return list(_parse_csv(body))
 
 
-def _parse_csv(body: str) -> Iterable[Dict[str, str]]:
-    """Parse a Gaia TAP CSV response into row dicts."""
-    if not body:
-        return iter([])
-    reader = csv.DictReader(io.StringIO(body))
-    if reader.fieldnames is None:
-        return iter([])
-    return reader
-
-
 # ---------------------------------------------------------------------------
 # Normalization
 # ---------------------------------------------------------------------------
-
-
-def _to_float(s: Any) -> Optional[float]:
-    """Empty / 'null' / un-parseable cells become ``None``."""
-    if s is None:
-        return None
-    if isinstance(s, float):
-        return s
-    text = str(s).strip()
-    if not text or text.lower() in {"null", "nan", "none"}:
-        return None
-    try:
-        v = float(text)
-    except (TypeError, ValueError):
-        return None
-    if v != v:  # NaN
-        return None
-    return v
 
 
 def safe_parallax_to_distance(

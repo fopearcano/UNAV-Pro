@@ -18,7 +18,7 @@ Cinema 4D.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 try:
@@ -101,14 +101,18 @@ class InspectionResult:
 
     @property
     def display_text(self) -> str:
+        """Multi-line text rendering for the dialog's metadata panel."""
         return _format_display_text(self)
 
     @property
     def status_line(self) -> str:
+        """One-line status the dialog appends to its log after each
+        inspection."""
         return _format_status_line(self)
 
     @property
     def clipboard_json(self) -> str:
+        """JSON payload the **Copy Metadata JSON** button emits."""
         return _format_clipboard_json(self)
 
 
