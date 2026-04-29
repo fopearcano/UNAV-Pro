@@ -32,9 +32,13 @@ _ID_BTN_CLOUD = 1003
 _ID_BTN_CLEAR = 1004
 _ID_BTN_APPLY_FILTER = 1005
 _ID_BTN_REGENERATE = 1006
+_ID_BTN_INSPECT = 1007
+_ID_BTN_COPY_META = 1008
 _ID_GROUP_LOG = 2000
 _ID_LOG = 2001
 _ID_BTN_CLEAR_LOG = 2002
+_ID_GROUP_META = 3000
+_ID_META_PANEL = 3001
 
 
 if _C4D_AVAILABLE:
@@ -49,7 +53,7 @@ if _C4D_AVAILABLE:
 
             # Buttons grid.
             self.GroupBegin(
-                _ID_GROUP_BUTTONS, c4d.BFH_SCALEFIT, cols=2, rows=3,
+                _ID_GROUP_BUTTONS, c4d.BFH_SCALEFIT, cols=2, rows=4,
                 title="Actions",
             )
             self.GroupBorderSpace(8, 8, 8, 8)
@@ -59,6 +63,8 @@ if _C4D_AVAILABLE:
             self.AddButton(_ID_BTN_CLEAR, c4d.BFH_SCALEFIT, name="Clear Scene")
             self.AddButton(_ID_BTN_APPLY_FILTER, c4d.BFH_SCALEFIT, name="Apply View Filter")
             self.AddButton(_ID_BTN_REGENERATE, c4d.BFH_SCALEFIT, name="Regenerate Visible Field")
+            self.AddButton(_ID_BTN_INSPECT, c4d.BFH_SCALEFIT, name="Inspect Selected Object")
+            self.AddButton(_ID_BTN_COPY_META, c4d.BFH_SCALEFIT, name="Copy Metadata JSON")
             self.GroupEnd()
 
             # Status log.
@@ -70,15 +76,36 @@ if _C4D_AVAILABLE:
             self.AddMultiLineEditText(
                 _ID_LOG,
                 c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT,
-                inith=160,
+                inith=140,
                 style=c4d.DR_MULTILINE_READONLY | c4d.DR_MULTILINE_MONOSPACED,
             )
             self.AddButton(_ID_BTN_CLEAR_LOG, c4d.BFH_RIGHT, name="Clear Log")
             self.GroupEnd()
+
+            # Metadata inspection panel.
+            self.GroupBegin(
+                _ID_GROUP_META, c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT,
+                cols=1, rows=1, title="Metadata Inspector",
+            )
+            self.GroupBorderSpace(8, 8, 8, 8)
+            self.AddMultiLineEditText(
+                _ID_META_PANEL,
+                c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT,
+                inith=240,
+                style=c4d.DR_MULTILINE_READONLY | c4d.DR_MULTILINE_MONOSPACED,
+            )
+            self.GroupEnd()
             return True
 
+        # The most recent inspection so "Copy Metadata JSON" has
+        # something to copy without re-reading the selection.
+        _last_inspection = None
+
         def InitValues(self) -> bool:
+            from ui.metadata_panel import empty_panel_text
+
             self._append_log(f"{self.TITLE} ready.")
+            self.SetString(_ID_META_PANEL, empty_panel_text())
             return True
 
         def Command(self, mid: int, msg) -> bool:
@@ -95,6 +122,10 @@ if _C4D_AVAILABLE:
                     self._append_log(mock_actions.apply_view_filter())
                 elif mid == _ID_BTN_REGENERATE:
                     self._append_log(mock_actions.regenerate_visible_field())
+                elif mid == _ID_BTN_INSPECT:
+                    self._do_inspect()
+                elif mid == _ID_BTN_COPY_META:
+                    self._do_copy_metadata()
                 elif mid == _ID_BTN_CLEAR_LOG:
                     self.SetString(_ID_LOG, "")
             except Exception as exc:  # noqa: BLE001 — UI boundary handler
@@ -108,6 +139,36 @@ if _C4D_AVAILABLE:
             current = self.GetString(_ID_LOG) or ""
             new_text = (current + line + "\n") if current else (line + "\n")
             self.SetString(_ID_LOG, new_text)
+
+        def _do_inspect(self) -> None:
+            from ui.metadata_panel import inspect_active_selection
+
+            result = inspect_active_selection()
+            self._last_inspection = result
+            self.SetString(_ID_META_PANEL, result.display_text)
+            self._append_log(result.status_line)
+
+        def _do_copy_metadata(self) -> None:
+            from ui.metadata_panel import (
+                copy_to_clipboard,
+                no_inspection_result,
+            )
+
+            result = self._last_inspection
+            if result is None:
+                self._append_log(no_inspection_result().status_line)
+                return
+            payload = result.clipboard_json
+            if not payload or payload == "{}":
+                self._append_log("Copy Metadata: no metadata to copy.")
+                return
+            ok = copy_to_clipboard(payload)
+            if ok:
+                self._append_log(
+                    f"Copy Metadata: copied {len(payload)} chars to clipboard."
+                )
+            else:
+                self._append_log("Copy Metadata: clipboard write refused by host.")
 
 else:  # pragma: no cover — non-C4D import path
 
