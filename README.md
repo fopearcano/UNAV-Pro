@@ -245,6 +245,8 @@ the plugin's package layout is documented in [`docs/PLUGIN_STRUCTURE.md`](docs/P
 
 * [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) — every dialog button
   and what it does, in order.
+* [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md) —
+  architecture, conventions, and how to add a new connector.
 * [`docs/PRO_WORKFLOW.md`](docs/PRO_WORKFLOW.md) — recommended
   professional workflow assembling a multi-catalog scene end to
   end.
@@ -292,7 +294,7 @@ python -m pytest tests/ -q
 
 The suite is c4d-free: every module that touches the C4D host
 guards its import behind `try: import c4d` and exposes pure
-helpers that exercise without one. **529 tests** at the time of
+helpers that exercise without one. **500+ tests** at the time of
 writing, covering catalog I/O, spatial filtering and indexing,
 scene-sync diffing, route distance computation, persistence
 round-trip, safety evaluators, the four real-catalog connectors
