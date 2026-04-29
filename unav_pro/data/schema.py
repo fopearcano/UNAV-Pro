@@ -63,8 +63,10 @@ OBJECT_TYPES = (
     "cluster",
     "planet",
     "exoplanet",
+    "moon",
     "asteroid",
     "comet",
+    "spacecraft",
     "unknown",
 )
 
@@ -109,8 +111,10 @@ _TYPE_COLORS: Dict[str, Tuple[int, int, int]] = {
     "cluster":  (240, 230, 200),
     "planet":   (170, 170, 200),
     "exoplanet": (170, 170, 200),
+    "moon":     (200, 200, 210),
     "asteroid": (160, 140, 120),
     "comet":    (180, 220, 240),
+    "spacecraft": (220, 220, 100),
     "unknown":  (180, 180, 180),
 }
 
