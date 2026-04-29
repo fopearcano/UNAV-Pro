@@ -60,6 +60,11 @@ _ID_BTN_SAVE_STATE = 7002
 _ID_BTN_LOAD_STATE = 7003
 _ID_BTN_RESET_PREFS = 7004
 _ID_BTN_DIAGNOSTICS = 7005
+_ID_GROUP_SAFETY = 8000
+_ID_SAFETY_STATUS = 8001
+_ID_NUM_SAFETY_CAP = 8002
+_ID_CHK_FULL_OVERRIDE = 8003
+_ID_BTN_SAFETY_REFRESH = 8004
 
 
 if _C4D_AVAILABLE:
@@ -96,6 +101,26 @@ if _C4D_AVAILABLE:
             self.AddEditNumberArrows(_ID_NUM_BRIGHTNESS_SCALE, c4d.BFH_SCALEFIT)
             self.SetFloat(
                 _ID_NUM_BRIGHTNESS_SCALE, 1.0, min=0.01, max=100.0, step=0.1,
+            )
+            self.GroupEnd()
+
+            # Safety strip — always visible so the user knows the cap
+            # and the active mode at a glance.
+            self.GroupBegin(
+                _ID_GROUP_SAFETY, c4d.BFH_SCALEFIT, cols=2, rows=2,
+                title="Safety",
+            )
+            self.GroupBorderSpace(8, 8, 8, 8)
+            self.AddStaticText(_ID_SAFETY_STATUS, c4d.BFH_SCALEFIT, name="(safety status)")
+            self.AddButton(_ID_BTN_SAFETY_REFRESH, c4d.BFH_RIGHT, name="Refresh")
+            self.AddStaticText(0, c4d.BFH_LEFT, name="Max generated objects")
+            self.AddEditNumberArrows(_ID_NUM_SAFETY_CAP, c4d.BFH_SCALEFIT)
+            self.SetInt32(
+                _ID_NUM_SAFETY_CAP, 100_000, min=0, max=10_000_000, step=1000,
+            )
+            self.AddCheckbox(
+                _ID_CHK_FULL_OVERRIDE, c4d.BFH_LEFT, initw=0, inith=0,
+                name="Allow Full Catalog (override navigator + cap)",
             )
             self.GroupEnd()
 
@@ -206,6 +231,7 @@ if _C4D_AVAILABLE:
             self.SetString(_ID_META_PANEL, empty_panel_text())
             self._route = Route()
             self.SetString(_ID_RT_PANEL, rt_empty())
+            self._refresh_safety_status()
             return True
 
         def Command(self, mid: int, msg) -> bool:
@@ -218,6 +244,7 @@ if _C4D_AVAILABLE:
                     self._append_log(
                         mock_actions.generate_point_cloud(
                             encoding=self._read_encoding(),
+                            safety_limits=self._read_safety_limits(),
                         )
                     )
                 elif mid == _ID_BTN_CLEAR:
@@ -274,6 +301,9 @@ if _C4D_AVAILABLE:
                     self._append_log(mock_actions.reset_preferences())
                 elif mid == _ID_BTN_DIAGNOSTICS:
                     self._do_open_diagnostics()
+                elif mid == _ID_BTN_SAFETY_REFRESH or mid == _ID_NUM_SAFETY_CAP \
+                        or mid == _ID_CHK_FULL_OVERRIDE:
+                    self._refresh_safety_status()
                 elif mid == _ID_BTN_CLEAR_LOG:
                     self.SetString(_ID_LOG, "")
             except Exception as exc:  # noqa: BLE001 — UI boundary handler
@@ -323,6 +353,36 @@ if _C4D_AVAILABLE:
             self._append_log(result.status_line)
 
         # --- Route panel handlers ----------------------------------
+
+        # --- Safety helpers --------------------------------------------
+
+        def _read_safety_limits(self):
+            from core.safety import SafetyLimits
+
+            try:
+                cap = int(self.GetInt32(_ID_NUM_SAFETY_CAP))
+                override = bool(self.GetBool(_ID_CHK_FULL_OVERRIDE))
+            except Exception:  # noqa: BLE001
+                return SafetyLimits()
+            try:
+                return SafetyLimits(
+                    max_generated_objects=max(0, cap),
+                    allow_full_catalog=override,
+                )
+            except ValueError:
+                return SafetyLimits()
+
+        def _refresh_safety_status(self) -> None:
+            from core.logger import _count_visible_sector_children
+            from core.safety import status_line
+
+            limits = self._read_safety_limits()
+            generated = None
+            try:
+                generated = _count_visible_sector_children()
+            except Exception:  # noqa: BLE001
+                pass
+            self.SetString(_ID_SAFETY_STATUS, status_line(limits, generated))
 
         def _refresh_route_panel(self) -> None:
             from ui.route_panel import panel_text

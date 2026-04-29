@@ -142,22 +142,36 @@ def _rgb_int_to_float(
     return clamp(rgb[0]), clamp(rgb[1]), clamp(rgb[2])
 
 
-def marker_for_object(obj: CatalogObject, kind: str = "point") -> Dict[int, Any]:
+def marker_for_object(
+    obj: CatalogObject,
+    kind: str = "point",
+    include_full_metadata: bool = False,
+) -> Dict[int, Any]:
     """Return the dict that will be written into the object's marker
-    BaseContainer. Pure data — no c4d types involved."""
-    return {
+    BaseContainer. Pure data — no c4d types involved.
+
+    ``include_full_metadata=False`` (the safety default) omits the
+    schema's ``metadata_json`` blob from the marker so the .c4d
+    stays small. The metadata inspector pulls the full record from
+    the external ``MetadataLookup`` via the uid; only the offline
+    "carry the scene to a machine without the catalog" workflow
+    needs ``include_full_metadata=True``.
+    """
+    payload: Dict[int, Any] = {
         MARKER_KEY_IS_UNAV: True,
         MARKER_KEY_KIND: kind,
         MARKER_KEY_UID: obj.uid or "",
         MARKER_KEY_CATALOG_SOURCE: obj.catalog_source or "",
         MARKER_KEY_OBJECT_TYPE: obj.object_type or "",
         MARKER_KEY_NAME: obj.name or obj.common_name or "",
-        MARKER_KEY_METADATA_JSON: obj.metadata_json or "{}",
         MARKER_KEY_RA_DEG: float(obj.ra_deg),
         MARKER_KEY_DEC_DEG: float(obj.dec_deg),
         MARKER_KEY_DISTANCE_PC: float(obj.distance_parsec) if obj.distance_parsec is not None else 0.0,
         MARKER_KEY_SCHEMA_VERSION: 1,
     }
+    if include_full_metadata:
+        payload[MARKER_KEY_METADATA_JSON] = obj.metadata_json or "{}"
+    return payload
 
 
 def starfield_marker(scale_mode: str = DEFAULT_SCALE_MODE) -> Dict[int, Any]:
@@ -238,6 +252,7 @@ def build_point_object(
     obj: CatalogObject,
     scale_mode: str = DEFAULT_SCALE_MODE,
     encoding: Optional[VisualEncodingParams] = None,
+    include_full_metadata: bool = False,
 ) -> "c4d.BaseObject":
     """Create one C4D ``Onull`` representing ``obj``. Not yet inserted
     into a document.
@@ -272,7 +287,9 @@ def build_point_object(
     null[c4d.ID_BASEOBJECT_USECOLOR] = c4d.ID_BASEOBJECT_USECOLOR_ALWAYS
     null[c4d.ID_BASEOBJECT_COLOR] = c4d.Vector(r, g, b)
 
-    _write_marker(null, marker_for_object(obj, kind="point"))
+    _write_marker(null, marker_for_object(
+        obj, kind="point", include_full_metadata=include_full_metadata,
+    ))
     return null
 
 
@@ -396,6 +413,7 @@ def build_starfield(
     scale_mode: str = DEFAULT_SCALE_MODE,
     replace_existing: bool = True,
     encoding: Optional[VisualEncodingParams] = None,
+    include_full_metadata: bool = False,
 ) -> Tuple["c4d.BaseObject", int]:
     """Create the UNAV_Starfield null and one child per catalog object.
 
@@ -425,6 +443,7 @@ def build_starfield(
             try:
                 child = build_point_object(
                     obj, scale_mode=scale_mode, encoding=encoding,
+                    include_full_metadata=include_full_metadata,
                 )
             except Exception:  # noqa: BLE001 — never let one bad row stop the build
                 _log.exception("Skipping bad object during build: uid=%r", getattr(obj, "uid", None))

@@ -191,6 +191,7 @@ def generate_point_cloud(
     catalog_path: Optional[str] = None,
     max_objects: Optional[int] = None,
     encoding=None,
+    safety_limits=None,
 ) -> str:
     """Build the UNAV_Starfield from the bundled sample catalog.
 
@@ -212,6 +213,12 @@ def generate_point_cloud(
             return "Cinema 4D not available; cannot generate point cloud"
 
         from c4d_objects.point_cloud_builder import build_starfield
+        from c4d_objects.navigation_null import find_navigator
+        from core.safety import (
+            LEVEL_BLOCKED, LEVEL_WARN, SafetyLimits, evaluate_generate,
+        )
+
+        limits = safety_limits or SafetyLimits()
 
         objects, err = _load_objects_or_message(catalog_path)
         if err is not None:
@@ -246,7 +253,20 @@ def generate_point_cloud(
         if doc is None:
             return "no active document; open a scene first"
 
-        _, count = build_starfield(doc, filtered, encoding=encoding)
+        # Safety gate. Block / warn / allow based on the active limits.
+        has_navigator = find_navigator(doc) is not None
+        decision = evaluate_generate(
+            len(filtered), limits=limits, has_navigator=has_navigator,
+        )
+        if decision.level == LEVEL_BLOCKED:
+            return f"safety: {decision.short_summary()}"
+        if decision.level == LEVEL_WARN:
+            suffix = f"; safety: {decision.short_summary()}" + suffix
+
+        _, count = build_starfield(
+            doc, filtered, encoding=encoding,
+            include_full_metadata=limits.embed_full_metadata_in_marker,
+        )
         return (
             f"generated {count} point objects under 'UNAV_Starfield'"
             + suffix

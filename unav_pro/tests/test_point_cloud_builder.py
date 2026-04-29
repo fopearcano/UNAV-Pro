@@ -173,7 +173,28 @@ def test_marker_for_object_handles_missing_optional_fields():
     m = marker_for_object(obj)
     assert m[MARKER_KEY_NAME] == ""
     assert m[MARKER_KEY_DISTANCE_PC] == 0.0
-    assert m[MARKER_KEY_METADATA_JSON] == "{}"
+    # Safety default: full metadata blob is NOT embedded.
+    assert MARKER_KEY_METADATA_JSON not in m
+
+
+def test_marker_for_object_excludes_metadata_blob_by_default():
+    obj = CatalogObject(
+        uid="u", catalog_source="src", object_type="star",
+        ra_deg=0.0, dec_deg=0.0,
+        metadata_json='{"big": "blob"}',
+    )
+    m = marker_for_object(obj)
+    assert MARKER_KEY_METADATA_JSON not in m
+
+
+def test_marker_for_object_opt_in_includes_metadata_blob():
+    obj = CatalogObject(
+        uid="u", catalog_source="src", object_type="star",
+        ra_deg=0.0, dec_deg=0.0,
+        metadata_json='{"big": "blob"}',
+    )
+    m = marker_for_object(obj, include_full_metadata=True)
+    assert m[MARKER_KEY_METADATA_JSON] == '{"big": "blob"}'
 
 
 def test_marker_keys_are_unique():
