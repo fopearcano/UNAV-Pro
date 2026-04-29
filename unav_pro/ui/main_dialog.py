@@ -49,6 +49,12 @@ _ID_GROUP_SYNC = 5000
 _ID_BTN_SYNC = 5001
 _ID_CHK_AUTO_SYNC = 5002
 _ID_CHK_DEBUG_CONE = 5003
+_ID_GROUP_ROUTE = 6000
+_ID_BTN_RT_ADD = 6001
+_ID_BTN_RT_CLEAR = 6002
+_ID_BTN_RT_SPLINE = 6003
+_ID_BTN_RT_FOCUS = 6004
+_ID_RT_PANEL = 6005
 
 
 if _C4D_AVAILABLE:
@@ -137,6 +143,26 @@ if _C4D_AVAILABLE:
             self.AddButton(_ID_BTN_CLEAR_LOG, c4d.BFH_RIGHT, name="Clear Log")
             self.GroupEnd()
 
+            # Route planner.
+            self.GroupBegin(
+                _ID_GROUP_ROUTE, c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT,
+                cols=1, rows=2, title="Route Planner",
+            )
+            self.GroupBorderSpace(8, 8, 8, 8)
+            self.AddMultiLineEditText(
+                _ID_RT_PANEL,
+                c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT,
+                inith=140,
+                style=c4d.DR_MULTILINE_READONLY | c4d.DR_MULTILINE_MONOSPACED,
+            )
+            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=4, rows=1)
+            self.AddButton(_ID_BTN_RT_ADD, c4d.BFH_SCALEFIT, name="Add Selected Object as Waypoint")
+            self.AddButton(_ID_BTN_RT_CLEAR, c4d.BFH_SCALEFIT, name="Clear Route")
+            self.AddButton(_ID_BTN_RT_SPLINE, c4d.BFH_SCALEFIT, name="Build Route Spline")
+            self.AddButton(_ID_BTN_RT_FOCUS, c4d.BFH_SCALEFIT, name="Focus Navigator on Waypoint")
+            self.GroupEnd()
+            self.GroupEnd()
+
             # Metadata inspection panel.
             self.GroupBegin(
                 _ID_GROUP_META, c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT,
@@ -156,11 +182,20 @@ if _C4D_AVAILABLE:
         # something to copy without re-reading the selection.
         _last_inspection = None
 
+        # Live route state. Shared between every "Route Planner"
+        # button so adds, clears, and rebuilds operate on the same
+        # waypoint list.
+        _route = None
+
         def InitValues(self) -> bool:
+            from core.route import Route
             from ui.metadata_panel import empty_panel_text
+            from ui.route_panel import empty_panel_text as rt_empty
 
             self._append_log(f"{self.TITLE} ready.")
             self.SetString(_ID_META_PANEL, empty_panel_text())
+            self._route = Route()
+            self.SetString(_ID_RT_PANEL, rt_empty())
             return True
 
         def Command(self, mid: int, msg) -> bool:
@@ -206,6 +241,14 @@ if _C4D_AVAILABLE:
                     self._do_inspect()
                 elif mid == _ID_BTN_COPY_META:
                     self._do_copy_metadata()
+                elif mid == _ID_BTN_RT_ADD:
+                    self._do_route_add()
+                elif mid == _ID_BTN_RT_CLEAR:
+                    self._do_route_clear()
+                elif mid == _ID_BTN_RT_SPLINE:
+                    self._do_route_spline()
+                elif mid == _ID_BTN_RT_FOCUS:
+                    self._do_route_focus()
                 elif mid == _ID_BTN_CLEAR_LOG:
                     self.SetString(_ID_LOG, "")
             except Exception as exc:  # noqa: BLE001 — UI boundary handler
@@ -253,6 +296,73 @@ if _C4D_AVAILABLE:
             self._last_inspection = result
             self.SetString(_ID_META_PANEL, result.display_text)
             self._append_log(result.status_line)
+
+        # --- Route panel handlers ----------------------------------
+
+        def _refresh_route_panel(self) -> None:
+            from ui.route_panel import panel_text
+
+            try:
+                self.SetString(_ID_RT_PANEL, panel_text(self._route))
+            except Exception as exc:  # noqa: BLE001
+                _log.exception("Failed to render route panel")
+                self.SetString(_ID_RT_PANEL, f"(could not render route: {exc})")
+
+        def _do_route_add(self) -> None:
+            try:
+                from c4d import documents  # type: ignore
+            except ImportError:
+                self._append_log("Add Waypoint: Cinema 4D not available.")
+                return
+            from ui.route_panel import add_selected_as_waypoint
+
+            doc = documents.GetActiveDocument()
+            if doc is None:
+                self._append_log("Add Waypoint: no active document.")
+                return
+            _wp, status = add_selected_as_waypoint(doc, self._route)
+            self._append_log(status)
+            self._refresh_route_panel()
+
+        def _do_route_clear(self) -> None:
+            try:
+                from c4d import documents  # type: ignore
+            except ImportError:
+                self._append_log("Clear Route: Cinema 4D not available.")
+                return
+            from ui.route_panel import clear_route
+
+            doc = documents.GetActiveDocument()
+            self._append_log(clear_route(self._route, doc=doc))
+            self._refresh_route_panel()
+
+        def _do_route_spline(self) -> None:
+            try:
+                from c4d import documents  # type: ignore
+            except ImportError:
+                self._append_log("Build Route Spline: Cinema 4D not available.")
+                return
+            from ui.route_panel import build_route_spline
+
+            doc = documents.GetActiveDocument()
+            if doc is None:
+                self._append_log("Build Route Spline: no active document.")
+                return
+            self._append_log(build_route_spline(doc, self._route))
+
+        def _do_route_focus(self) -> None:
+            try:
+                from c4d import documents  # type: ignore
+            except ImportError:
+                self._append_log("Focus Navigator: Cinema 4D not available.")
+                return
+            from ui.route_panel import focus_navigator_on
+
+            doc = documents.GetActiveDocument()
+            if doc is None:
+                self._append_log("Focus Navigator: no active document.")
+                return
+            self._append_log(focus_navigator_on(doc, self._route))
 
         def _do_copy_metadata(self) -> None:
             from ui.metadata_panel import (
