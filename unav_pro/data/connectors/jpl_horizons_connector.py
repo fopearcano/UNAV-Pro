@@ -68,7 +68,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Sequence, Tuple
 
 from core.logging_util import get_logger
 from data.schema import CatalogObject, OBJECT_TYPES
@@ -78,22 +78,34 @@ _log = get_logger("data.connectors.jpl_horizons")
 #: Public JPL Horizons web API endpoint.
 JPL_HORIZONS_URL = "https://ssd.jpl.nasa.gov/api/horizons.api"
 
-#: Catalog source recorded on every CatalogObject we emit.
+#: Internal release token. Kept for the metadata blob even though
+#: the catalog_source label is human-readable.
 SOURCE_NAME = "jpl_horizons"
+
+#: Human-readable label written into every emitted ``CatalogObject``.
+#: Distinct from ``SOURCE_NAME`` (the internal token, preserved in
+#: ``metadata_json``) so the inspector and dataset manager show
+#: "JPL Horizons" rather than ``jpl_horizons``.
+CATALOG_SOURCE_LABEL = "JPL Horizons"
 
 #: Default observer center. ``@10`` is the Sun (heliocentric); ``@0``
 #: is the Solar System Barycenter; ``500@399`` is Earth geocentric.
 #: Heliocentric is the natural choice for static point generation —
 #: distances are physically meaningful and the frame is stable across
-#: bodies.
+#: bodies. ``500@10`` is an alias for the Sun.
 DEFAULT_CENTER = "@10"
 
 #: Object types we recognize for ``--object-type``. The schema's full
 #: list is broader; we restrict to the categories the CLI advertises.
 ALLOWED_OBJECT_TYPES: Tuple[str, ...] = (
-    "planet", "moon", "asteroid", "comet", "spacecraft",
+    "planet", "moon", "asteroid", "comet", "spacecraft", "unknown",
 )
 DEFAULT_OBJECT_TYPE = "planet"
+
+#: Above this many bodies in a batch fetch the CLI prints a soft
+#: warning. The hard ceiling is enforced separately at the CLI; this
+#: is advisory.
+SOFT_BATCH_WARNING = 25
 
 #: 1 astronomical unit in parsec. Definition value (IAU 2012 / 2015):
 #: 1 pc = 648000/π AU ⇒ 1 AU = π/648000 pc ≈ 4.84813681e-6 pc.
@@ -360,14 +372,21 @@ def parse_response(
     x_au, y_au, z_au = labels["X"], labels["Y"], labels["Z"]
     x_pc, y_pc, z_pc = _xyz_pc_from_au(x_au, y_au, z_au)
     ra_deg, dec_deg, distance_pc = _ra_dec_distance_pc(x_pc, y_pc, z_pc)
+    # Approximate distance in km, useful for the inspector and any
+    # downstream tools that prefer SI units. 1 AU = 1.49597870700e8 km.
+    distance_km = math.sqrt(x_au * x_au + y_au * y_au + z_au * z_au) * 1.495978707e8
 
     extra: Dict[str, Any] = {
+        "release": SOURCE_NAME,
         "body": query.body,
         "epoch": query.epoch,
         "center": query.center,
         "ref_plane": "ICRF",
         "vector_au": {"X": x_au, "Y": y_au, "Z": z_au},
+        "vector_pc": {"X": x_pc, "Y": y_pc, "Z": z_pc},
         "out_units": "AU-D",
+        "distance_au": math.sqrt(x_au * x_au + y_au * y_au + z_au * z_au),
+        "distance_km": distance_km,
     }
     # Optional extras — keep whatever Horizons handed us.
     for key in ("VX", "VY", "VZ", "LT", "RG", "RR"):
@@ -380,9 +399,9 @@ def parse_response(
         }
 
     uid = _make_uid(query)
-    return CatalogObject(
+    obj = CatalogObject(
         uid=uid,
-        catalog_source=SOURCE_NAME,
+        catalog_source=CATALOG_SOURCE_LABEL,
         object_type=query.object_type,
         ra_deg=ra_deg,
         dec_deg=dec_deg,
@@ -391,14 +410,30 @@ def parse_response(
         common_name=query.body,
         metadata_json=json.dumps(extra, sort_keys=True),
     )
+    # Populate cartesian + c4d fields directly from the Horizons
+    # vector so the streaming pipeline does not have to round-trip
+    # through ra/dec/distance. Default scale is "pc" — c4d_x/y/z
+    # equal cartesian_x/y/z. The visible-sector builder recomputes
+    # for non-pc scale_modes via ``compute_derived_fields``.
+    obj.cartesian_x, obj.cartesian_y, obj.cartesian_z = x_pc, y_pc, z_pc
+    obj.c4d_x, obj.c4d_y, obj.c4d_z = x_pc, y_pc, z_pc
+    return obj
 
 
-def _slug(s: str) -> str:
-    return re.sub(r"[^A-Za-z0-9._-]+", "_", s.strip()).strip("_") or "body"
+def _uid_segment(value: str) -> str:
+    """Slug a single uid segment: replace whitespace and slashes with
+    underscores. Keeps colons / dots / dashes / underscores so an
+    ISO epoch like ``2026-01-01T00:00:00`` survives unchanged."""
+    cleaned = re.sub(r"[\s/]+", "_", (value or "").strip())
+    cleaned = re.sub(r"[^A-Za-z0-9._:_-]+", "_", cleaned)
+    return cleaned.strip("_") or "x"
 
 
 def _make_uid(query: JPLBodyQuery) -> str:
-    return f"{SOURCE_NAME}:{_slug(query.body)}@{_slug(query.epoch)}"
+    """``jpl:{body}:{epoch}`` — release-agnostic, registry-namespaced
+    later. Both segments are lightly slugged so whitespace becomes
+    ``_`` but ISO timestamps' colons survive."""
+    return f"jpl:{_uid_segment(query.body)}:{_uid_segment(query.epoch)}"
 
 
 def fetch_and_normalize(
@@ -409,3 +444,189 @@ def fetch_and_normalize(
     """Convenience: ``fetch_response`` + ``parse_response`` in one call."""
     response = fetch_response(query, fetch_fn=fetch_fn, url=url)
     return parse_response(response, query)
+
+
+# ---------------------------------------------------------------------------
+# Batch — one epoch, many bodies
+# ---------------------------------------------------------------------------
+
+
+from dataclasses import field as _field
+from typing import List as _List
+
+
+@dataclass
+class BatchBodyRequest:
+    """One row in a batch request: a body and its UNAV object_type tag."""
+
+    body: str
+    object_type: str = DEFAULT_OBJECT_TYPE
+
+
+@dataclass
+class BatchResult:
+    """Outcome of ``fetch_batch_and_normalize``.
+
+    Per-body errors do not abort the batch; they are recorded in
+    ``errors`` so the CLI can surface them and continue writing the
+    objects that did succeed.
+    """
+
+    objects: _List[CatalogObject] = _field(default_factory=list)
+    errors: _List[Tuple[str, str]] = _field(default_factory=list)
+    warnings: _List[str] = _field(default_factory=list)
+
+    @property
+    def kept(self) -> int:
+        return len(self.objects)
+
+    @property
+    def failed(self) -> int:
+        return len(self.errors)
+
+    def short_summary(self) -> str:
+        parts = [f"kept {self.kept}"]
+        if self.failed:
+            parts.append(f"{self.failed} failed")
+        if self.warnings:
+            parts.append(f"{len(self.warnings)} warning(s)")
+        return ", ".join(parts)
+
+
+def fetch_batch_and_normalize(
+    requests: Sequence[BatchBodyRequest],
+    epoch: str,
+    *,
+    center: str = DEFAULT_CENTER,
+    fetch_fn: Optional[FetchFn] = None,
+    url: str = JPL_HORIZONS_URL,
+) -> BatchResult:
+    """Fetch every body in ``requests`` at the same ``epoch``.
+
+    Per-body failures are recorded in ``BatchResult.errors`` and
+    skipped; the remaining bodies still flow through. Returns the
+    merged result.
+
+    The batch runs sequentially — Horizons's web API is one body per
+    call, and the public archive is rate-sensitive. For a typical
+    "Sun + 8 planets + Moon" batch this takes ~20 seconds against
+    the live endpoint.
+    """
+    out = BatchResult()
+    if len(requests) > SOFT_BATCH_WARNING:
+        out.warnings.append(
+            f"batch contains {len(requests)} bodies (above the "
+            f"{SOFT_BATCH_WARNING} soft threshold); the public Horizons "
+            "archive may be slow. Consider splitting into smaller batches."
+        )
+    for req in requests:
+        try:
+            query = JPLBodyQuery(
+                body=req.body, epoch=epoch, center=center,
+                object_type=req.object_type,
+            )
+        except ValueError as exc:
+            out.errors.append((req.body, f"invalid query: {exc}"))
+            continue
+        try:
+            obj = fetch_and_normalize(query, fetch_fn=fetch_fn, url=url)
+        except JPLHorizonsError as exc:
+            out.errors.append((req.body, str(exc)))
+            _log.warning("Batch: %s failed: %s", req.body, exc)
+            continue
+        out.objects.append(obj)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# CLI-friendly one-shot
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class FetchAndWriteReport:
+    """Outcome of ``fetch_normalize_and_write``."""
+
+    output_path: str
+    object_count: int = 0
+    failed: int = 0
+    warnings: _List[str] = _field(default_factory=list)
+    errors: _List[Tuple[str, str]] = _field(default_factory=list)
+    index_path: Optional[str] = None
+    index_total_objects: Optional[int] = None
+    index_cell_count: Optional[int] = None
+
+
+def fetch_single_normalize_and_write(
+    query: JPLBodyQuery,
+    output_path: str,
+    *,
+    fetch_fn: Optional[FetchFn] = None,
+    url: str = JPL_HORIZONS_URL,
+    build_index_dir: Optional[str] = None,
+    index_chunk_size: int = 1_000,
+) -> FetchAndWriteReport:
+    """End-to-end single-body: fetch + normalize + write JSONL +
+    optionally build the spatial index. Mirrors the Gaia connector's
+    matching helper so the CLIs look uniform."""
+    obj = fetch_and_normalize(query, fetch_fn=fetch_fn, url=url)
+
+    from data.catalog_io import write_catalog
+
+    write_catalog([obj], output_path, fmt="jsonl", compute_derived=False)
+
+    report = FetchAndWriteReport(output_path=output_path, object_count=1)
+    if build_index_dir:
+        from core.spatial_index import build_index
+
+        index = build_index(
+            [obj], build_index_dir, chunk_size=index_chunk_size,
+        )
+        report.index_path = build_index_dir
+        report.index_total_objects = index.total_objects
+        report.index_cell_count = len(index.cells)
+    return report
+
+
+def fetch_batch_normalize_and_write(
+    requests: Sequence[BatchBodyRequest],
+    epoch: str,
+    output_path: str,
+    *,
+    center: str = DEFAULT_CENTER,
+    fetch_fn: Optional[FetchFn] = None,
+    url: str = JPL_HORIZONS_URL,
+    build_index_dir: Optional[str] = None,
+    index_chunk_size: int = 1_000,
+) -> FetchAndWriteReport:
+    """End-to-end batch: fetch every body in ``requests`` at the
+    same epoch, write the merged JSONL, optionally build the
+    spatial index. Partial failure is recorded in
+    ``report.errors`` — the bodies that did succeed still get
+    written and indexed."""
+    batch = fetch_batch_and_normalize(
+        requests, epoch, center=center, fetch_fn=fetch_fn, url=url,
+    )
+
+    from data.catalog_io import write_catalog
+
+    write_catalog(batch.objects, output_path, fmt="jsonl", compute_derived=False)
+
+    report = FetchAndWriteReport(
+        output_path=output_path,
+        object_count=batch.kept,
+        failed=batch.failed,
+        warnings=list(batch.warnings),
+        errors=list(batch.errors),
+    )
+
+    if build_index_dir and batch.objects:
+        from core.spatial_index import build_index
+
+        index = build_index(
+            batch.objects, build_index_dir, chunk_size=index_chunk_size,
+        )
+        report.index_path = build_index_dir
+        report.index_total_objects = index.total_objects
+        report.index_cell_count = len(index.cells)
+    return report

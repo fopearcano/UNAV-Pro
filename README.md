@@ -129,6 +129,39 @@ navigator's cone touches; the full Gaia subset never enters
 memory. Full walkthrough in
 [`docs/V0_3_GAIA_DR3_WORKFLOW.md`](docs/V0_3_GAIA_DR3_WORKFLOW.md).
 
+### C. JPL Horizons solar-system path (v0.4)
+
+```bash
+# Fetch a planet pack at one epoch (offline; no Cinema 4D required)
+python tools/fetch_jpl_solar_system.py \
+    --epoch "2026-01-01T00:00:00" \
+    --bodies "Mercury,Venus,Earth,Mars,Jupiter,Saturn,Uranus,Neptune,Pluto,Moon=moon" \
+    --center "500@10" \
+    --output data/catalogs/jpl_solar_system_2026.jsonl \
+    --build-index cache/jpl_solar_system_2026
+```
+
+For a single body (e.g. one probe or one comet) use
+`tools/fetch_jpl_body.py --body "Mars" --epoch "2026-01-01T00:00:00"
+--center "500@10" --output data/catalogs/jpl_mars_2026.jsonl`.
+Full walkthrough in
+[`docs/V0_4_JPL_HORIZONS_WORKFLOW.md`](docs/V0_4_JPL_HORIZONS_WORKFLOW.md);
+the coordinate / epoch contract is in
+[`docs/SOLAR_SYSTEM_COORDINATES_AND_EPOCHS.md`](docs/SOLAR_SYSTEM_COORDINATES_AND_EPOCHS.md).
+
+### D. Mixed Gaia + JPL scene
+
+Run both fetches above, then in C4D **Dataset Manager… → Add
+Dataset** for *each* JSONL (point each entry at its matching
+`cache/...` index), click **Load Active Datasets**, then
+**Create Navigation Null** and **Sync Visible Sector**. Gaia
+stars and JPL bodies coexist by design — uid prefixes (`gaia:`
+vs `jpl:`) and `catalog_source` labels (`Gaia DR3` vs `JPL
+Horizons`) stay disjoint, the visual encoder distinguishes them
+at sight, and the metadata inspector reaches either record
+without ambiguity. Full walkthrough in
+[`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
+
 ---
 
 ## Data workflow (real catalogs)
@@ -281,6 +314,9 @@ the plugin's package layout is documented in [`docs/PLUGIN_STRUCTURE.md`](docs/P
 * [`docs/V0_2_SECTOR_STREAMING_WORKFLOW.md`](docs/V0_2_SECTOR_STREAMING_WORKFLOW.md) — v0.2 streaming contract.
 * [`docs/V0_3_GAIA_DR3_WORKFLOW.md`](docs/V0_3_GAIA_DR3_WORKFLOW.md) — v0.3 Gaia regional import.
 * [`docs/GAIA_QUERY_LIMITS_AND_SAFETY.md`](docs/GAIA_QUERY_LIMITS_AND_SAFETY.md) — Gaia caps + safety.
+* [`docs/V0_4_JPL_HORIZONS_WORKFLOW.md`](docs/V0_4_JPL_HORIZONS_WORKFLOW.md) — v0.4 JPL solar-system epoch import.
+* [`docs/SOLAR_SYSTEM_COORDINATES_AND_EPOCHS.md`](docs/SOLAR_SYSTEM_COORDINATES_AND_EPOCHS.md) — heliocentric ICRF + epoch contract.
+* [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md) — Gaia + JPL together in one C4D scene.
 
 Per-feature deep docs:
 [`UNAV_PRO_ARCHITECTURE`](docs/UNAV_PRO_ARCHITECTURE.md) ·
