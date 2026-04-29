@@ -65,6 +65,8 @@ _ID_SAFETY_STATUS = 8001
 _ID_NUM_SAFETY_CAP = 8002
 _ID_CHK_FULL_OVERRIDE = 8003
 _ID_BTN_SAFETY_REFRESH = 8004
+_ID_GROUP_WORKFLOW = 9000
+_ID_WORKFLOW_HINT = 9001
 
 
 if _C4D_AVAILABLE:
@@ -76,6 +78,19 @@ if _C4D_AVAILABLE:
 
         def CreateLayout(self) -> bool:
             self.SetTitle(self.TITLE)
+
+            # Workflow hint — read-only strip at the top guiding the
+            # user through the five v0.2 sector-streaming steps.
+            self.GroupBegin(
+                _ID_GROUP_WORKFLOW, c4d.BFH_SCALEFIT, cols=1, rows=1,
+                title="Workflow",
+            )
+            self.GroupBorderSpace(8, 8, 8, 8)
+            self.AddStaticText(
+                _ID_WORKFLOW_HINT, c4d.BFH_SCALEFIT,
+                name="(workflow status)",
+            )
+            self.GroupEnd()
 
             # Visual encoding controls.
             from core.visual_encoding import COLOR_MODE_LABELS
@@ -232,7 +247,44 @@ if _C4D_AVAILABLE:
             self._route = Route()
             self.SetString(_ID_RT_PANEL, rt_empty())
             self._refresh_safety_status()
+            self._refresh_workflow_hint()
             return True
+
+        def _refresh_workflow_hint(self) -> None:
+            """Set the top workflow strip to the current step."""
+            try:
+                from c4d import documents  # type: ignore
+
+                from c4d_objects.navigation_null import find_navigator
+                from c4d_objects.point_cloud_builder import find_visible_sector
+                from core.dataset_registry import (
+                    DatasetRegistry, default_registry_path,
+                )
+                from core.sector_streaming import workflow_step
+
+                doc = documents.GetActiveDocument()
+                registry = DatasetRegistry.load(default_registry_path())
+                enabled = registry.enabled_entries()
+                indexed = any(e.is_indexed for e in enabled)
+                has_nav = doc is not None and find_navigator(doc) is not None
+                visible = 0
+                if doc is not None:
+                    sector = find_visible_sector(doc)
+                    if sector is not None:
+                        ch = sector.GetDown()
+                        while ch is not None:
+                            visible += 1
+                            ch = ch.GetNext()
+                _step, hint = workflow_step(
+                    enabled_dataset_count=len(enabled),
+                    any_dataset_indexed=indexed,
+                    has_navigator=has_nav,
+                    visible_sector_count=visible,
+                )
+                self.SetString(_ID_WORKFLOW_HINT, hint)
+            except Exception:  # noqa: BLE001 — UI boundary
+                _log.exception("Workflow hint refresh failed")
+                self.SetString(_ID_WORKFLOW_HINT, "(workflow status unavailable)")
 
         def Command(self, mid: int, msg) -> bool:
             try:
@@ -309,6 +361,10 @@ if _C4D_AVAILABLE:
             except Exception as exc:  # noqa: BLE001 — UI boundary handler
                 _log.exception("Dialog command %s failed", mid)
                 self._append_log(f"ERROR: {exc!r}")
+            # The workflow hint depends on the registry, the
+            # navigator, and the visible-sector count — any of which
+            # an action might have just changed.
+            self._refresh_workflow_hint()
             return True
 
         # --- helpers ---------------------------------------------------

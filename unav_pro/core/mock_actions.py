@@ -211,6 +211,82 @@ def _filter_for_active_navigator(objects):
     return result.objects, result.stats.short_summary(), True
 
 
+def _stream_for_active_navigator(doc):
+    """v0.2 sector-streaming entry point.
+
+    Resolves the active navigator + the persisted dataset registry,
+    streams candidates through the spatial index when possible, and
+    returns ``(filtered_objects, status_fragment, used_filter,
+    stream_result)``. Falls back to the same shape as
+    ``_filter_for_active_navigator`` when no navigator or no enabled
+    datasets exist, so callers can keep the old fallback path.
+    """
+    from c4d_objects.navigation_null import (
+        find_navigator,
+        get_navigation_filter_params,
+        get_navigation_forward_vector,
+        get_navigation_origin,
+    )
+    from core.dataset_registry import (
+        DatasetRegistry, default_registry_path,
+    )
+    from core.sector_streaming import (
+        DEFAULT_DATASET_SIZE_WARNING,
+        stream_sector_for_active_datasets,
+    )
+
+    nav = find_navigator(doc)
+    if nav is None:
+        return [], "no UNAV_Navigator in scene", False, None
+
+    registry = DatasetRegistry.load(default_registry_path())
+    if not registry.enabled_entries():
+        return [], "no enabled datasets in registry", False, None
+
+    params = get_navigation_filter_params(nav)
+    origin = get_navigation_origin(nav)
+    forward = get_navigation_forward_vector(nav)
+
+    stream = stream_sector_for_active_datasets(
+        registry, params,
+        origin_c4d=(origin.x, origin.y, origin.z),
+        forward=(forward.x, forward.y, forward.z),
+        dataset_size_warning=DEFAULT_DATASET_SIZE_WARNING,
+    )
+    frag = stream.short_summary()
+    return stream.objects, frag, True, stream
+
+
+def _publish_streamed_lookup(stream) -> None:
+    """Side-effect: install the streamed objects into the default
+    metadata lookup so the inspector can show full records for any
+    visible-sector object the user clicks. Marker-only fallback
+    still applies for objects outside the visible sector."""
+    if stream is None or not stream.objects:
+        return
+    try:
+        from core.metadata_lookup import MetadataLookup, set_default_lookup
+
+        set_default_lookup(MetadataLookup(stream.objects))
+    except Exception:  # noqa: BLE001 — boundary; logger only
+        _log.exception("Failed to install streamed lookup")
+
+
+def _format_stream_warnings(stream) -> str:
+    """Concatenate warnings + errors from a stream result into a
+    short, human-friendly suffix for the dialog log."""
+    if stream is None:
+        return ""
+    parts = []
+    for w in stream.warnings():
+        parts.append(f"warn: {w}")
+    for e in stream.errors():
+        parts.append(f"err: {e}")
+    if not parts:
+        return ""
+    return " | " + " | ".join(parts)
+
+
 def generate_point_cloud(
     catalog_path: Optional[str] = None,
     max_objects: Optional[int] = None,
@@ -235,26 +311,31 @@ def generate_point_cloud(
         if err is not None:
             return err
 
-        from c4d_objects.point_cloud_builder import build_starfield
         from c4d_objects.navigation_null import find_navigator
+        from c4d_objects.point_cloud_builder import build_starfield
         from core.safety import (
             LEVEL_BLOCKED, LEVEL_WARN, SafetyLimits, evaluate_generate,
         )
 
         limits = safety_limits or SafetyLimits()
 
-        objects, load_err = _load_objects_or_message(catalog_path)
-        if load_err is not None:
-            return load_err
+        # v0.2: prefer registry-driven streaming. If no enabled
+        # datasets, fall back to the bundled-sample path so the
+        # quick-start workflow still works on a brand-new install.
+        filtered, frag, used_filter, stream = _stream_for_active_navigator(doc)
+        used_streaming = used_filter and stream is not None
+        warning_suffix = _format_stream_warnings(stream)
 
-        if not objects:
-            return "catalog is empty; nothing to generate"
-
-        # Optional explicit cap from caller.
-        if max_objects is not None and max_objects >= 0:
-            objects = objects[:max_objects]
-
-        filtered, frag, used_filter = _filter_for_active_navigator(objects)
+        if not used_filter or not filtered:
+            objects, load_err = _load_objects_or_message(catalog_path)
+            if load_err is not None:
+                return load_err
+            if not objects:
+                return "catalog is empty; nothing to generate"
+            if max_objects is not None and max_objects >= 0:
+                objects = objects[:max_objects]
+            filtered, frag, used_filter = _filter_for_active_navigator(objects)
+            warning_suffix = ""  # streaming did not run
 
         if not used_filter:
             cap = _NAVIGATOR_LESS_FALLBACK_CAP
@@ -267,7 +348,8 @@ def generate_point_cloud(
             else:
                 suffix = f"; warning: {frag}; using full catalog"
         else:
-            suffix = f"; filter: {frag}"
+            tag = "stream" if used_streaming else "filter"
+            suffix = f"; {tag}: {frag}{warning_suffix}"
 
         if not filtered:
             return "no objects remain after filtering" + suffix
@@ -281,6 +363,9 @@ def generate_point_cloud(
             return f"safety: {decision.short_summary()}"
         if decision.level == LEVEL_WARN:
             suffix = f"; safety: {decision.short_summary()}" + suffix
+
+        if used_streaming:
+            _publish_streamed_lookup(stream)
 
         _, count = build_starfield(
             doc, filtered, encoding=encoding,
@@ -348,28 +433,40 @@ def sync_visible_sector(
             return err
 
         from core.scene_sync import sync_visible_sector as do_sync
-
-        objects, load_err = _load_objects_or_message(catalog_path)
-        if load_err is not None:
-            return load_err
-        if not objects:
-            return "catalog is empty"
-
-        filtered, frag, used_filter = _filter_for_active_navigator(objects)
-        if not used_filter:
-            return f"cannot sync without navigator: {frag}"
-
-        # Determine the scene scale + max_visible from the navigator
-        # so the sync respects the navigator's hard cap.
         from c4d_objects.navigation_null import (
             find_navigator,
             get_navigation_filter_params,
         )
 
+        # v0.2 streaming path. When the registry has enabled
+        # datasets, only the chunks the cone touches reach the
+        # plugin; the rest stays on disk.
+        filtered, frag, used_filter, stream = _stream_for_active_navigator(doc)
+        used_streaming = used_filter and stream is not None
+        warning_suffix = _format_stream_warnings(stream)
+
+        if not used_filter:
+            # Fall back to the bundled-sample path so brand-new
+            # users still get a working sync on day zero.
+            objects, load_err = _load_objects_or_message(catalog_path)
+            if load_err is not None:
+                return load_err
+            if not objects:
+                return "catalog is empty"
+            filtered, frag, used_filter = _filter_for_active_navigator(objects)
+            warning_suffix = ""
+
+        if not used_filter:
+            return f"cannot sync without navigator: {frag}"
+
         navigator = find_navigator(doc)
         if navigator is None:
             return "no UNAV_Navigator in scene"
         params = get_navigation_filter_params(navigator)
+
+        if used_streaming:
+            _publish_streamed_lookup(stream)
+
         diff = do_sync(
             doc,
             filtered,
@@ -378,7 +475,8 @@ def sync_visible_sector(
             max_visible=params.max_visible_objects,
             show_debug_cone=show_debug_cone,
         )
-        return f"{diff.short_summary()}; filter: {frag}"
+        tag = "stream" if used_streaming else "filter"
+        return f"{diff.short_summary()}; {tag}: {frag}{warning_suffix}"
 
     return _safe("Sync Visible Sector", _do)
 
@@ -416,26 +514,38 @@ def regenerate_visible_field(
             clear_starfield,
         )
 
-        objects, load_err = _load_objects_or_message(catalog_path)
-        if load_err is not None:
-            return load_err
-        if not objects:
-            return "catalog is empty"
+        # v0.2: streaming path first; fall back to bundled-sample
+        # when no registry entries are enabled.
+        filtered, frag, used_filter, stream = _stream_for_active_navigator(doc)
+        used_streaming = used_filter and stream is not None
+        warning_suffix = _format_stream_warnings(stream)
 
-        filtered, frag, used_filter = _filter_for_active_navigator(objects)
+        if not used_filter:
+            objects, load_err = _load_objects_or_message(catalog_path)
+            if load_err is not None:
+                return load_err
+            if not objects:
+                return "catalog is empty"
+            filtered, frag, used_filter = _filter_for_active_navigator(objects)
+            warning_suffix = ""
+
         if not used_filter:
             return f"cannot regenerate without navigator: {frag}"
         if not filtered:
             return "no objects remain after filtering; " + frag
+
+        if used_streaming:
+            _publish_streamed_lookup(stream)
 
         removed = clear_starfield(doc)
         _, count = build_starfield(
             doc, filtered, replace_existing=False, encoding=encoding,
         )
         prefix = f"removed {removed} prior, " if removed else ""
+        tag = "stream" if used_streaming else "filter"
         return (
             f"{prefix}generated {count} point objects under 'UNAV_Starfield'"
-            f"; filter: {frag}"
+            f"; {tag}: {frag}{warning_suffix}"
         )
 
     return _safe("Regenerate Visible Field", _do)
