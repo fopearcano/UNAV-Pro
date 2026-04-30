@@ -265,6 +265,210 @@ void test_query_nearest_to_ray_skips_behind_origin() {
   std::cout << "PASS query_nearest_to_ray_skips_behind_origin\n";
 }
 
+// ---------------------------------------------------------------------------
+// v1.0 — v2 fixtures + accel-grid / screen-radius picking
+// ---------------------------------------------------------------------------
+
+std::string buildV2Fixture(bool relative = false) {
+  std::string body;
+  // Header: version=2, flags=0, scale=1.0, point_count=3,
+  //         source_count=1, header_extra=112, sidecar_len=0.
+  appendUInt16LE(body, 2);
+  appendUInt16LE(body, 0);
+  appendDoubleLE(body, 1.0);
+  appendUInt32LE(body, 3);
+  appendUInt32LE(body, 1);
+  appendUInt32LE(body, 112);
+  appendUInt16LE(body, 0);
+
+  // v2 extras (112 bytes):
+  // renderer_flags + visual_encoding_id + sector_origin[3]
+  // + bounding_sphere[4] + aabb_min[3] + aabb_max[3]
+  std::uint32_t flags = (1u << 4) | (1u << 5);  // sphere + box valid
+  if (relative) flags |= (1u << 0);            // points-relative
+  appendUInt32LE(body, flags);
+  appendUInt32LE(body, 0xCAFEBABEu);  // visual_encoding_id
+
+  const double origin[3] = {100.0, 0.0, 0.0};  // sector at +100pc on X
+  for (int i = 0; i < 3; ++i) appendDoubleLE(body, origin[i]);
+  // Bounding sphere centred at origin with radius 5.
+  appendDoubleLE(body, origin[0]);
+  appendDoubleLE(body, origin[1]);
+  appendDoubleLE(body, origin[2]);
+  appendDoubleLE(body, 5.0);
+  // AABB.
+  appendDoubleLE(body, origin[0] - 5.0);
+  appendDoubleLE(body, origin[1] - 5.0);
+  appendDoubleLE(body, origin[2] - 5.0);
+  appendDoubleLE(body, origin[0] + 5.0);
+  appendDoubleLE(body, origin[1] + 5.0);
+  appendDoubleLE(body, origin[2] + 5.0);
+
+  // Source table.
+  appendUInt32LE(body, 1);
+  appendUInt16LE(body, 4);
+  body += "Gaia";
+
+  // Three points clustered around the sector. If `relative`, store
+  // them as offsets (the loader will re-add origin); otherwise
+  // store absolute positions.
+  for (int i = 0; i < 3; ++i) {
+    UnavPoint p{};
+    if (relative) {
+      p.x = static_cast<double>(i - 1);
+      p.y = 0.0;
+      p.z = 0.0;
+    } else {
+      p.x = origin[0] + static_cast<double>(i - 1);
+      p.y = origin[1];
+      p.z = origin[2];
+    }
+    p.size = 1.0f;
+    p.r = 1.0f; p.g = 1.0f; p.b = 1.0f;
+    p.uid_hash = static_cast<std::uint64_t>(100 + i);
+    p.source_id = 1;
+    body.append(reinterpret_cast<const char*>(&p), sizeof(p));
+  }
+  const std::uint32_t crc = crc32(
+      reinterpret_cast<const std::uint8_t*>(body.data()), body.size());
+  std::string file;
+  file += "UNAV";
+  file += body;
+  file += "UEND";
+  appendUInt32LE(file, crc);
+  return file;
+}
+
+void writeV2Fixture(const std::string& path, bool relative = false) {
+  const std::string blob = buildV2Fixture(relative);
+  std::ofstream fh(path, std::ios::binary | std::ios::trunc);
+  fh.write(blob.data(), static_cast<std::streamsize>(blob.size()));
+}
+
+void test_v2_load_absolute() {
+  const std::string path = "test_v2_abs.unav";
+  writeV2Fixture(path, /*relative=*/false);
+  UnavPointBuffer buf;
+  std::string err;
+  const std::size_t n = buf.loadFromFile(path, &err);
+  assert(n == 3);
+  assert(buf.isV2());
+  assert(buf.lastLoadStats().format_version == 2);
+  // Absolute storage: world position == stored position.
+  double wx, wy, wz;
+  buf.worldPosition(0, &wx, &wy, &wz);
+  assert(std::abs(wx - 99.0) < 1e-9);  // origin.x=100, point.x=99
+  assert(buf.v2Extras().visual_encoding_id == 0xCAFEBABEu);
+  assert(buf.v2Extras().pointsAreRelative() == false);
+  assert(buf.v2Extras().boundingSphereValid());
+  assert(buf.v2Extras().boundingBoxValid());
+  std::cout << "PASS v2_load_absolute\n";
+  std::remove(path.c_str());
+}
+
+void test_v2_load_camera_relative() {
+  const std::string path = "test_v2_rel.unav";
+  writeV2Fixture(path, /*relative=*/true);
+  UnavPointBuffer buf;
+  std::string err;
+  const std::size_t n = buf.loadFromFile(path, &err);
+  assert(n == 3);
+  assert(buf.v2Extras().pointsAreRelative());
+  // Relative storage: world position = origin + stored offset.
+  double wx, wy, wz;
+  buf.worldPosition(0, &wx, &wy, &wz);
+  assert(std::abs(wx - 99.0) < 1e-9);  // origin=100, offset=-1
+  std::cout << "PASS v2_load_camera_relative\n";
+  std::remove(path.c_str());
+}
+
+void test_v2_rejects_v1_with_extras() {
+  // Synthetic file: claims version=1 but sets header_extra=112.
+  std::string body;
+  appendUInt16LE(body, 1);
+  appendUInt16LE(body, 0);
+  appendDoubleLE(body, 1.0);
+  appendUInt32LE(body, 0);
+  appendUInt32LE(body, 0);
+  appendUInt32LE(body, 112);  // illegal for v1
+  appendUInt16LE(body, 0);
+  std::string file = "UNAV";
+  file += body;
+  file += "UEND";
+  const std::uint32_t crc = crc32(
+      reinterpret_cast<const std::uint8_t*>(body.data()), body.size());
+  appendUInt32LE(file, crc);
+  const std::string path = "test_v1_with_extras.unav";
+  std::ofstream fh(path, std::ios::binary | std::ios::trunc);
+  fh.write(file.data(), static_cast<std::streamsize>(file.size()));
+  fh.close();
+  UnavPointBuffer buf;
+  std::string err;
+  const std::size_t n = buf.loadFromFile(path, &err);
+  assert(n == 0);
+  assert(err.find("v1 header has non-zero header_extra_bytes") != std::string::npos);
+  std::cout << "PASS v2_rejects_v1_with_extras\n";
+  std::remove(path.c_str());
+}
+
+void test_absurd_point_count_rejected() {
+  // Header claims an absurd point_count.
+  std::string body;
+  appendUInt16LE(body, 1);
+  appendUInt16LE(body, 0);
+  appendDoubleLE(body, 1.0);
+  appendUInt32LE(body, 100'000'000u);  // way past kAbsurdPointCount
+  appendUInt32LE(body, 0);
+  appendUInt32LE(body, 0);
+  appendUInt16LE(body, 0);
+  std::string file = "UNAV";
+  file += body;
+  file += "UEND";
+  const std::uint32_t crc = crc32(
+      reinterpret_cast<const std::uint8_t*>(body.data()), body.size());
+  appendUInt32LE(file, crc);
+  const std::string path = "test_absurd.unav";
+  std::ofstream fh(path, std::ios::binary | std::ios::trunc);
+  fh.write(file.data(), static_cast<std::streamsize>(file.size()));
+  fh.close();
+  UnavPointBuffer buf;
+  std::string err;
+  const std::size_t n = buf.loadFromFile(path, &err);
+  assert(n == 0);
+  assert(err.find("absurd") != std::string::npos);
+  std::cout << "PASS absurd_point_count_rejected\n";
+  std::remove(path.c_str());
+}
+
+void test_accel_grid_built_after_load() {
+  const std::string path = "test_accel.unav";
+  writeV2Fixture(path);
+  UnavPointBuffer buf;
+  std::string err;
+  buf.loadFromFile(path, &err);
+  assert(buf.accelCellCount() > 0);
+  std::cout << "PASS accel_grid_built_after_load\n";
+  std::remove(path.c_str());
+}
+
+void test_screen_radius_pick_finds_point_inside_radius() {
+  UnavPointBuffer buf;
+  // Three points along +X.
+  for (int i = 0; i < 3; ++i) {
+    UnavPoint p{};
+    p.x = static_cast<double>(i * 10);
+    p.uid_hash = static_cast<std::uint64_t>(i + 1);
+    buf.addPoint(p);
+  }
+  // Trigger accel-grid build via a load; here we just confirm
+  // the brute-force fallback finds the same point as the
+  // accelerated path would.
+  const std::size_t hit = buf.queryNearestPointToRay(
+      -1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.5);
+  assert(hit == 0);  // ray passes through point[0]=(0,0,0)
+  std::cout << "PASS screen_radius_pick_finds_point_inside_radius\n";
+}
+
 void test_python_fixture_if_available() {
   // Optional: load the Python-produced fixture under
   // `cache/binary/test.unav` when present. The Python test
@@ -296,7 +500,14 @@ int main() {
   test_clear_resets_state();
   test_query_nearest_to_position();
   test_query_nearest_to_ray_skips_behind_origin();
+  // v1.0 — v2 loader, accel grid, safety
+  test_v2_load_absolute();
+  test_v2_load_camera_relative();
+  test_v2_rejects_v1_with_extras();
+  test_absurd_point_count_rejected();
+  test_accel_grid_built_after_load();
+  test_screen_radius_pick_finds_point_inside_radius();
   test_python_fixture_if_available();
-  std::cout << "All v0.9 native tests passed.\n";
+  std::cout << "All native point-buffer tests passed.\n";
   return 0;
 }

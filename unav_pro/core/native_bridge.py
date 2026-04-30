@@ -196,10 +196,15 @@ def read_request(path: Optional[str] = None) -> Optional[NativeRequest]:
 
 @dataclass
 class NativeStatus:
-    """Payload the native plugin writes after each load attempt."""
+    """Payload the native plugin writes after each load attempt.
+
+    v1.0 added the GPU-buffer fields. Older statuses (v0.9) lack
+    them and default to safe values, so the dialog can still
+    parse them without complaining.
+    """
 
     schema_version: int = BRIDGE_SCHEMA_VERSION
-    engine_version: str = "0.9.0"
+    engine_version: str = "1.0.0"
     engine_available: bool = False
     last_request_id: str = ""
     last_load_iso: str = ""
@@ -208,6 +213,13 @@ class NativeStatus:
     file_size_bytes: int = 0
     load_seconds: float = 0.0
     error: str = ""
+    # v1.0 — GPU buffer stats. The C++ side populates these; older
+    # v0.9 status files leave them at the defaults.
+    gpu_uploaded: bool = False
+    gpu_bytes: int = 0
+    estimated_gpu_bytes: int = 0
+    gpu_backend: str = ""
+    format_version: int = 0  # 1 or 2 once a load has happened
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -230,11 +242,53 @@ class NativeStatus:
             return f"native: error — {self.error}"
         if not self.engine_available:
             return "native: not loaded (Python fallback)"
+        gpu_part = ""
+        if self.gpu_uploaded:
+            gpu_part = f", GPU {self.gpu_backend or 'on'}"
+        elif self.estimated_gpu_bytes:
+            gpu_part = (
+                f", GPU CPU-fallback "
+                f"(~{self.estimated_gpu_bytes / (1024 * 1024):.1f} MB)"
+            )
+        v_part = (
+            f" v{self.format_version}"
+            if self.format_version else ""
+        )
         return (
             f"native v{self.engine_version}: {self.point_count} points "
-            f"({self.file_size_bytes} bytes, "
-            f"{self.load_seconds * 1000:.0f} ms)"
+            f"(file{v_part} {self.file_size_bytes} bytes, "
+            f"{self.load_seconds * 1000:.0f} ms{gpu_part})"
         )
+
+    def detailed_lines(self) -> list:
+        """Multi-line breakdown the v1.0 dialog surfaces in its
+        Native Point Viewer strip. Always returns at least one
+        line so the panel never goes blank."""
+        if self.error:
+            return [f"native: error — {self.error}"]
+        if not self.engine_available:
+            return ["native: not loaded (Python fallback)"]
+        lines = [
+            f"engine    : v{self.engine_version}"
+            + (f" (format v{self.format_version})" if self.format_version else ""),
+            f"file      : {self.binary_path or '(none)'}",
+            f"points    : {self.point_count:,}",
+            f"file size : {self.file_size_bytes:,} bytes",
+            f"load time : {self.load_seconds * 1000:.1f} ms",
+        ]
+        if self.gpu_uploaded:
+            lines.append(
+                f"GPU       : {self.gpu_backend or 'uploaded'} "
+                f"({self.gpu_bytes:,} bytes)"
+            )
+        elif self.estimated_gpu_bytes:
+            lines.append(
+                f"GPU       : CPU fallback "
+                f"(would use ~{self.estimated_gpu_bytes:,} bytes)"
+            )
+        if self.last_load_iso:
+            lines.append(f"last load : {self.last_load_iso}")
+        return lines
 
 
 def write_status(

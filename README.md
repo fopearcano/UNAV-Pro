@@ -189,15 +189,22 @@ the dataset registry's `<entry.name>:` namespace layers on top.
 Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
 
-### H. Native Point Viewer (v0.9 prototype)
+### H. Native Point Viewer (v1.0 stable)
 
-v0.9 closes the v0.8 spike: a real C++ binary loader, a fourth
-render mode ("Native Point Viewer (Experimental)"), and the
-file-based Python ↔ C++ bridge. The dialog gains three buttons
-(Export Visible Sector (Binary), Reload Native Viewer, Toggle
-Native Viewer Mode) plus a live status strip. Stability over
-beauty — drawing is per-point inside the plugin's `Draw`
-callback (slow above ~10 k); v0.10+ swaps in GPU instancing.
+v1.0 turns the v0.9 prototype into a stable production-grade
+render mode: GPU buffer architecture with safe CPU fallback,
+shader-style render config (size scale, brightness, distance
+fade, debug colour), camera-relative coordinates via the v2
+binary format, accelerated picking with a uniform-grid spatial
+index, and per-load safety guards. The dialog's Native Point
+Viewer strip shows file path, point count, GPU buffer status,
+memory estimate, and last reload time.
+
+```bash
+# Honest numbers benchmark — synthetic catalog, every phase timed.
+python tools/benchmark_visible_sector_export.py \
+    --points 100000 --version v2 --camera-relative
+```
 
 ```bash
 # Pack a navigator-filtered visible sector into the v0.8 binary
@@ -209,6 +216,13 @@ python tools/export_visible_sector_binary.py \
 ```
 
 Walkthroughs:
+[`docs/V1_0_GPU_RENDERER.md`](docs/V1_0_GPU_RENDERER.md),
+[`docs/GPU_BUFFER_ARCHITECTURE.md`](docs/GPU_BUFFER_ARCHITECTURE.md),
+[`docs/CAMERA_RELATIVE_RENDERING.md`](docs/CAMERA_RELATIVE_RENDERING.md),
+[`docs/PICKING_SYSTEM.md`](docs/PICKING_SYSTEM.md),
+[`docs/PERFORMANCE_TARGETS.md`](docs/PERFORMANCE_TARGETS.md).
+The v0.9 prototype docs remain valid for the bridge protocol /
+fallback semantics:
 [`docs/V0_9_NATIVE_VIEWER_PROTOTYPE.md`](docs/V0_9_NATIVE_VIEWER_PROTOTYPE.md),
 [`docs/BINARY_BRIDGE_WORKFLOW.md`](docs/BINARY_BRIDGE_WORKFLOW.md),
 [`docs/NATIVE_LIMITATIONS.md`](docs/NATIVE_LIMITATIONS.md).
@@ -435,6 +449,11 @@ the plugin's package layout is documented in [`docs/PLUGIN_STRUCTURE.md`](docs/P
 * [`docs/V0_9_NATIVE_VIEWER_PROTOTYPE.md`](docs/V0_9_NATIVE_VIEWER_PROTOTYPE.md) — v0.9 prototype summary + acceptance criteria.
 * [`docs/BINARY_BRIDGE_WORKFLOW.md`](docs/BINARY_BRIDGE_WORKFLOW.md) — the file-based Python ↔ C++ bridge protocol.
 * [`docs/NATIVE_LIMITATIONS.md`](docs/NATIVE_LIMITATIONS.md) — what the v0.9 prototype deliberately doesn't do.
+* [`docs/V1_0_GPU_RENDERER.md`](docs/V1_0_GPU_RENDERER.md) — v1.0 native GPU point renderer summary + acceptance.
+* [`docs/GPU_BUFFER_ARCHITECTURE.md`](docs/GPU_BUFFER_ARCHITECTURE.md) — three-class buffer / renderer architecture with CPU fallback.
+* [`docs/CAMERA_RELATIVE_RENDERING.md`](docs/CAMERA_RELATIVE_RENDERING.md) — floating-origin pattern at the v2 binary format + renderer level.
+* [`docs/PICKING_SYSTEM.md`](docs/PICKING_SYSTEM.md) — the three-layer picker (brute-force, accel grid, search fallback).
+* [`docs/PERFORMANCE_TARGETS.md`](docs/PERFORMANCE_TARGETS.md) — v1.0 honest-numbers targets + the benchmark CLI.
 
 Per-feature deep docs:
 [`UNAV_PRO_ARCHITECTURE`](docs/UNAV_PRO_ARCHITECTURE.md) ·
@@ -497,39 +516,39 @@ the per-milestone phasing is in
   visible-sector exporter (Python writer + reader + CLI) plus
   the four feasibility / migration docs.
 * **v0.9** closes the bridge: a real C++
-  `UnavPointBuffer::loadFromFile` (validated end-to-end against
-  the Python writer in 10 pure-stdlib C++ tests), a fourth
-  Render Mode ("Native Point Viewer (Experimental)"), the
+  `UnavPointBuffer::loadFromFile`, a fourth Render Mode, the
   file-based JSON bridge protocol, and three new dialog
-  buttons (Export Visible Sector (Binary), Reload Native
-  Viewer, Toggle Native Viewer Mode). **874 Python tests pass.**
+  buttons.
+* **v1.0** turns Native Point Viewer into a stable mode:
+  GPU-buffer architecture with safe CPU fallback, shader-style
+  render config, camera-relative coordinates via the v2
+  binary format, accelerated picking with a uniform-grid
+  spatial index, and a benchmark CLI for honest performance
+  measurement. **896 Python tests + 30 C++ tests pass.**
 
-### Current limitations
+### Current limitations (v1.0)
 
-* **Drawing is per-point.** The v0.9 plugin issues
-  `BaseDraw::DrawPoint` per visible point inside the C4D draw
-  callback. Workable up to ~10 k points; faster paths land
-  in v0.10+.
-* **No GPU buffer / instancing.** Reserved for v0.10's
-  `BaseDraw::DrawArrayWithVertexBuffer` work.
-* **No depth-buffer pick.** The bridge protocol carries
-  selection results, but the click → uid_hash path on the C4D
-  side requires v0.10's `BaseDraw::PickObject` integration;
-  v0.9 falls back to the v0.6 search panel for inspection.
-* **Auto Sync still manual.** The reload happens via the
-  "UNAV Reload Native Viewer" command (or the dialog's button)
-  — v0.10's SceneHook will poll the request file
-  automatically.
-* **Plugin IDs are placeholders.** Real PluginCafe IDs
-  arrive when the v0.10 build harness ships.
+* **Per-point draw** still uses `BaseDraw::DrawPoint`. The GPU
+  buffer abstraction is in place; v1.1 swaps the SDK draw call
+  to `DrawArrayWithVertexBuffer` for a ~10× draw speedup at
+  large point counts.
+* **CPU fallback by default.** v1.0's `uploadImpl` returns
+  `false` — the renderer walks the CPU shadow per draw. v1.1
+  flips it to a real GPU upload.
+* **No depth-buffer pick yet.** The accelerated picking is
+  CPU-side (uniform grid). v1.1's `BaseDraw::PickObject`
+  integration adds pixel-accurate picking.
+* **Auto Sync still manual.** The Reload Native Viewer button
+  / command is the trigger; v1.2's SceneHook auto-polls.
+* **Plugin IDs are placeholders.** Real PluginCafe IDs arrive
+  with v1.1's build-harness landing.
 
 ### Next step
 
-* **v0.10** — wire the v0.9 prototype into a
-  GPU-resident buffer via Maxon's
-  `BaseDraw::DrawArrayWithVertexBuffer`, add the SceneHook
-  that polls the request file per redraw, and implement the
-  `BaseDraw::PickObject` selection bridge so a viewport click
-  resolves to a uid via the metadata sidecar. Per-frame Auto
-  Sync, the GPU compute filter, and the real-time sector
-  streaming layer come in v0.11+.
+* **v1.1** — `BaseDraw::DrawArrayWithVertexBuffer` swap inside
+  `SdkRenderer::drawImpl` (and the corresponding `uploadImpl`
+  flip), `BaseDraw::PickObject` integration for pixel-accurate
+  selection, and PluginCafe-issued IDs. The buffer / renderer
+  / bridge contract stays unchanged — the swap is a one-file
+  change behind the existing `UnavGpuBuffer` /
+  `UnavRenderer` interfaces.

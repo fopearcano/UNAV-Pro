@@ -751,9 +751,10 @@ if _C4D_AVAILABLE:
 
         def _refresh_native_status(self) -> None:
             """Pull the most recent status the native plugin wrote
-            and surface a one-line summary in the Native bridge
-            strip. When the native plugin is not loaded, the dialog
-            says so plainly."""
+            and surface a multi-line breakdown in the Native bridge
+            strip (file path, point count, GPU buffer, memory
+            estimate, last load time). When the native plugin is
+            not loaded, the dialog says so plainly."""
             from core.native_bridge import read_status
             try:
                 status = read_status()
@@ -769,7 +770,12 @@ if _C4D_AVAILABLE:
                     "(native viewer: no status file — Python fallback)",
                 )
                 return
-            self.SetString(_ID_NATIVE_STATUS, status.short_summary())
+            # Multi-line v1.0 breakdown.
+            try:
+                lines = status.detailed_lines()
+            except Exception:  # noqa: BLE001
+                lines = [status.short_summary()]
+            self.SetString(_ID_NATIVE_STATUS, "\n".join(lines))
 
         def _do_toggle_native_viewer_mode(self) -> None:
             """Flip the Render Mode combo between the user's last

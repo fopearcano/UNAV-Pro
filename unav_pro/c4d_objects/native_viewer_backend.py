@@ -64,7 +64,12 @@ from core.native_bridge import (
     write_request,
 )
 from core.render_mode import RENDER_MODE_NATIVE_VIEWER, cap_for_mode
-from data.binary_export import export_objects
+from data.binary_export import (
+    FORMAT_VERSION_V1,
+    FORMAT_VERSION_V2,
+    VISUAL_ENCODING_ID_NONE,
+    export_objects,
+)
 from data.schema import DEFAULT_SCALE_MODE, CatalogObject
 
 _log = get_logger("c4d_objects.native_viewer_backend")
@@ -94,8 +99,18 @@ class NativeViewerBackend(RenderBackend):
         binary_path: Optional[str] = None,
         sidecar_path: Optional[str] = None,
         bridge_dir: Optional[str] = None,
+        format_version: int = FORMAT_VERSION_V2,
+        camera_relative: bool = True,
     ) -> None:
         super().__init__()
+        # v1.0: default to format v2 + camera-relative coords. The
+        # v0.9 prototype emitted v1; v1.0 turns the new fields on
+        # so the GPU renderer's frustum culling, bounding sphere,
+        # and float32-precision-friendly origin are all populated.
+        # Callers (tests / smoke tools) can opt back into v1 by
+        # passing ``format_version=FORMAT_VERSION_V1``.
+        self._format_version = int(format_version)
+        self._camera_relative = bool(camera_relative)
         self._bridge_dir = bridge_dir or default_bridge_dir()
         self._binary_path = binary_path or os.path.join(
             self._bridge_dir, DEFAULT_VISIBLE_SECTOR_FILENAME,
@@ -301,10 +316,21 @@ class NativeViewerBackend(RenderBackend):
         # 1. Binary file. Note we pass the sidecar's *basename* so the
         #    native plugin can reach it relative to the binary file.
         sidecar_basename = os.path.basename(self._sidecar_path)
-        bytes_written, _header, _sources = export_objects(
-            self._binary_path, objects,
+        # v1.0: emit v2 by default with the camera-relative coords
+        # the GPU renderer expects. The visual_encoding_id is
+        # derived from the encoding object's serialised form so
+        # the C++ side can detect a stale file when the artist
+        # changed encoding params without re-exporting.
+        kwargs: dict = dict(
             encoding=encoding, scale_mode=scale_mode,
             sidecar_path=sidecar_basename,
+            format_version=self._format_version,
+        )
+        if self._format_version == FORMAT_VERSION_V2:
+            kwargs["visual_encoding_id"] = _visual_encoding_id_for(encoding)
+            kwargs["camera_relative"] = self._camera_relative
+        bytes_written, _header, _sources = export_objects(
+            self._binary_path, objects, **kwargs,
         )
         self._last_file_size_bytes = int(bytes_written)
 
@@ -393,3 +419,28 @@ class NativeViewerBackend(RenderBackend):
                 removed += 1
             child = nxt
         return removed
+
+
+# ---------------------------------------------------------------------------
+# v1.0 — visual encoding id
+# ---------------------------------------------------------------------------
+
+
+def _visual_encoding_id_for(encoding) -> int:
+    """Stable 32-bit hash of the encoding params so the C++ side can
+    detect "the artist changed encoding without re-exporting" and
+    refuse a stale buffer. ``None`` (the schema-default natural
+    rendering) maps to ``0`` (``VISUAL_ENCODING_ID_NONE``)."""
+    if encoding is None:
+        return 0
+    try:
+        from dataclasses import asdict
+        from hashlib import blake2b
+        import json as _json
+        payload = _json.dumps(
+            asdict(encoding), sort_keys=True, default=str,
+        ).encode("utf-8")
+        digest = blake2b(payload, digest_size=4).digest()
+        return int.from_bytes(digest, "little", signed=False)
+    except Exception:  # noqa: BLE001 — never let id derivation break export
+        return 0

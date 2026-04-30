@@ -56,7 +56,7 @@ RENDER_MODE_LABELS: Tuple[Tuple[str, str], ...] = (
     ("Debug Objects (one null per point)", RENDER_MODE_DEBUG_OBJECTS),
     ("Instances (shared template)", RENDER_MODE_INSTANCES),
     ("Point Cloud (experimental)", RENDER_MODE_POINT_CLOUD),
-    ("Native Point Viewer (Experimental)", RENDER_MODE_NATIVE_VIEWER),
+    ("Native Point Viewer", RENDER_MODE_NATIVE_VIEWER),
 )
 
 
@@ -257,13 +257,15 @@ CAPABILITIES: Dict[str, ModeCapabilities] = {
     ),
     RENDER_MODE_NATIVE_VIEWER: ModeCapabilities(
         mode=RENDER_MODE_NATIVE_VIEWER,
-        name="Native Point Viewer (Experimental)",
+        name="Native Point Viewer",
         description=(
-            "v0.9 prototype: Python writes a binary visible-sector "
-            "file; the native C++ plugin (when loaded) draws the "
-            "points directly. No per-object C4D node is created; "
-            "selection uses the native pick file with a search-based "
-            "fallback when the native plugin is not available."
+            "v1.0: Python writes a v2 binary visible-sector file "
+            "(camera-relative coords, bounding sphere, AABB, "
+            "renderer flags); the native C++ GPU renderer (when "
+            "loaded) draws it via a persistent vertex buffer. No "
+            "per-object C4D node is created; selection routes "
+            "through the native pick file with a v0.6 search-based "
+            "fallback when the native plugin is unavailable."
         ),
         supports_per_object_selection=False,
         supports_per_instance_metadata=False,

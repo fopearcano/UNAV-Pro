@@ -49,6 +49,12 @@ struct EngineStatus {
   std::uint64_t file_size_bytes = 0;
   double load_seconds = 0.0;
   std::string error;
+  // v1.0 — GPU stats.
+  bool gpu_uploaded = false;
+  std::uint64_t gpu_bytes = 0;
+  std::uint64_t estimated_gpu_bytes = 0;
+  std::string gpu_backend;
+  std::uint16_t format_version = 0;
 };
 
 // ----------------------------------------------------------------------------

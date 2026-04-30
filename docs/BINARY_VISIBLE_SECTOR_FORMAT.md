@@ -1,7 +1,18 @@
 # Binary Visible-Sector Format
 
-The on-disk format the v0.8 Python exporter writes and the v0.9+
-native plugin reads. Stable since v0.8 (format version 1).
+The on-disk format the Python exporter writes and the native
+plugin reads. Two versions are supported:
+
+* **v1** — stable since v0.8. Header + sources + points + footer.
+* **v2** — added in v1.0. Same v1 prefix plus a fixed
+  ``header_extra_bytes`` block carrying renderer flags, a
+  visual-encoding id, the sector origin, the bounding sphere,
+  and the AABB. The point block layout is unchanged.
+
+A v2 reader handles both v1 and v2 files. A v1 reader fails closed
+on a v2 file (its ``header_extra_bytes`` is non-zero, which v1
+treats as malformed).
+
 Reference implementations:
 
 * Writer / reader (Python): `unav_pro/data/binary_export.py`
@@ -254,20 +265,102 @@ flag bit if the scaling demands it.
 
 ## 9. Versioning
 
-The format's `version` field is the contract:
+The format's `version` field is the contract.
 
-* **v1** (today, v0.8). Every field above. CRC32. No
-  compression, no deltas.
-* **v2** (reserved, no current plan). Examples of changes that
-  would warrant a version bump:
-  * Per-vertex sprite size encoded as a different type.
-  * Optional zlib / zstd compressed point block.
-  * A second per-point uid hash for collision detection.
-  * Time-varying point clouds (a per-point timestamp).
+### 9.1 v1 (since v0.8)
 
-The `header_extra_bytes` slot in v1 is the lever for backwards-
-compatible header extensions; structural changes get a new
-version.
+Every field in §3 – §6. CRC32. No compression, no deltas, no
+extra header. ``header_extra_bytes`` MUST be zero in v1.
+
+### 9.2 v2 (since v1.0)
+
+Same as v1 with two additions:
+
+* ``header_extra_bytes`` is set to **112** so the writer
+  records exactly that many bytes of extra header content.
+* The 112-byte extra-header block sits immediately **after**
+  the optional sidecar path and **before** the source table.
+
+The block (little-endian, packed) is:
+
+| Offset | Field                       | Type     | Size | Notes                                              |
+|-------:|------------------------------|---------:|-----:|----------------------------------------------------|
+|      0 | `renderer_flags`            | uint32   |    4 | Bitfield (see §9.3).                               |
+|      4 | `visual_encoding_id`        | uint32   |    4 | Caller-defined cache key. ``0`` = no encoding id.   |
+|      8 | `sector_origin`             | float64×3|   24 | World-space sector origin (parsec). Used for camera-relative rendering. |
+|     32 | `bounding_sphere`           | float64×4|   32 | ``(cx, cy, cz, radius)`` over the points (parsec). |
+|     64 | `aabb_min`                  | float64×3|   24 | AABB minimum corner (parsec).                      |
+|     88 | `aabb_max`                  | float64×3|   24 | AABB maximum corner (parsec).                      |
+
+Total: 112 bytes. The CRC32 footer covers this block the same
+way it covers the rest of the payload.
+
+### 9.3 `renderer_flags`
+
+| Bit  | Mask          | Meaning                                                     |
+|-----:|--------------:|-------------------------------------------------------------|
+|    0 | `0x01`        | Points are stored relative to ``sector_origin``. Reader adds the origin to recover world coordinates. |
+|    1 | `0x02`        | Disable distance fade (renderer hint).                      |
+|    2 | `0x04`        | Debug-draw mode (renderer hint).                            |
+|    3 | `0x08`        | Prefer billboard fallback over anti-aliased points.         |
+|    4 | `0x10`        | ``bounding_sphere`` block is valid.                          |
+|    5 | `0x20`        | ``aabb_min`` / ``aabb_max`` are valid.                       |
+
+Unknown bits MUST be ignored by readers; writers MUST set them
+to zero.
+
+### 9.4 `visual_encoding_id`
+
+Caller-defined opaque key. The Python writer derives a 32-bit
+BLAKE2b digest of the active ``VisualEncodingParams`` so the C++
+side can detect "the artist changed encoding without re-exporting"
+and warn. The renderer never interprets the value beyond
+"changed / unchanged."
+
+``0`` is the reserved sentinel: "no specific encoding"; the
+renderer should fall back to the colour and size baked into the
+point records.
+
+### 9.5 Camera-relative storage
+
+When ``RENDERER_FLAG_POINTS_RELATIVE_TO_SECTOR_ORIGIN`` is set,
+the per-point ``(x, y, z)`` are offsets from
+``sector_origin``. The reader reconstructs the world-space
+position as ``stored + sector_origin``. This lets the writer
+keep small numbers in the file (a few parsecs of offset)
+even when the absolute scene is far from the C4D origin —
+the float32 viewport stack downstream stays accurate.
+
+The C++ buffer's ``worldPosition(index, ...)`` honours this flag
+automatically; tests exercise both absolute and relative paths.
+
+### 9.6 Backwards compatibility
+
+* A **v1** reader (such as the v0.9 prototype's loader)
+  rejects a v2 file because its ``header_extra_bytes`` is
+  non-zero. The Python reference reader emits the message
+  ``"v1 header has non-zero header_extra_bytes; use the v2
+  reader for that file"``. v1 readers are unchanged from v0.8.
+* A **v2** reader handles both v1 and v2 files. The Python
+  reference reader (``read_visible_sector``) is the canonical
+  v2 reader; the C++ ``UnavPointBuffer::loadFromFile`` is the
+  v2-aware companion.
+* The writer defaults to v1 for bit-for-bit parity with v0.8 /
+  v0.9 callers; new callers (the v1.0 native viewer backend,
+  the benchmark CLI) opt into v2 via
+  ``format_version=FORMAT_VERSION_V2``.
+
+### 9.7 Future tightening
+
+Reserved structural changes that would warrant a v3:
+
+* Per-vertex sprite size encoded as a different type.
+* Optional zlib / zstd compressed point block.
+* A second per-point uid hash for collision detection.
+* Time-varying point clouds (a per-point timestamp).
+
+The ``header_extra_bytes`` slot is the lever for backwards-
+compatible v2.x extensions; structural changes get a new version.
 
 A reader that encounters a higher version than it understands
 **must** fail closed. The Python `read_visible_sector` raises

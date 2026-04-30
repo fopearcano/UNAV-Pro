@@ -57,9 +57,27 @@ MAGIC: bytes = b"UNAV"
 #: End-of-file magic. 4 ASCII bytes. ``b"UEND"``.
 MAGIC_END: bytes = b"UEND"
 
-#: On-disk format version. Bumped when a backwards-incompatible
-#: change lands. Today: 1.
-FORMAT_VERSION: int = 1
+#: On-disk format versions supported.
+#:
+#:   v1 — v0.8 / v0.9 layout. Header, sources, points, footer.
+#:   v2 — v1.0 layout. Same prefix as v1 plus a fixed-size extra
+#:        header block (`header_extra_bytes = V2_EXTRA_HEADER_SIZE`)
+#:        carrying renderer flags, visual-encoding id, sector
+#:        origin, bounding sphere + AABB. The points block layout
+#:        is unchanged.
+FORMAT_VERSION_V1: int = 1
+FORMAT_VERSION_V2: int = 2
+
+#: Format version emitted by ``write_visible_sector(...)`` when the
+#: caller does not request a specific version. v1.0 keeps the
+#: default at v1 so existing callers (the v0.8 CLI, v0.9 native
+#: viewer) get bit-for-bit identical output. New callers that
+#: want the v2 features pass ``format_version=FORMAT_VERSION_V2``
+#: explicitly.
+FORMAT_VERSION: int = FORMAT_VERSION_V1
+SUPPORTED_FORMAT_VERSIONS: Tuple[int, ...] = (
+    FORMAT_VERSION_V1, FORMAT_VERSION_V2,
+)
 
 #: Header struct format (excluding the optional metadata-sidecar
 #: path appended after the fixed header). Little-endian, packed.
@@ -103,6 +121,37 @@ SOURCE_HEADER_SIZE: int = struct.calcsize(_SOURCE_HEADER_FMT)
 #:   uint32 crc32           (over: file bytes from header[4:] up to but not including the footer)
 _FOOTER_FMT = "<4sI"
 FOOTER_SIZE: int = struct.calcsize(_FOOTER_FMT)
+
+
+# ---------------------------------------------------------------------------
+# v2 extra-header block
+# ---------------------------------------------------------------------------
+
+#: v2 extra-header layout. Sits immediately after the optional
+#: sidecar path string (``sidecar_path_len`` bytes) and before the
+#: source table. Locked at 96 bytes so the v0.8 ``header_extra_bytes``
+#: forward-compat slot exactly carries it.
+#:
+#:   uint32 renderer_flags
+#:   uint32 visual_encoding_id
+#:   float64 sector_origin_x, y, z              (parsec)
+#:   float64 bounding_sphere_x, y, z, radius    (parsec)
+#:   float64 aabb_min_x, y, z                   (parsec)
+#:   float64 aabb_max_x, y, z                   (parsec)
+_V2_EXTRA_HEADER_FMT = "<II3d4d3d3d"
+V2_EXTRA_HEADER_SIZE: int = struct.calcsize(_V2_EXTRA_HEADER_FMT)
+
+#: ``renderer_flags`` bit values. Stable since v1.0.
+RENDERER_FLAG_POINTS_RELATIVE_TO_SECTOR_ORIGIN = 1 << 0  # camera-rel coords
+RENDERER_FLAG_DISABLE_DISTANCE_FADE = 1 << 1            # solid alpha at all distances
+RENDERER_FLAG_DEBUG_DRAW = 1 << 2                       # GPU debug visualization
+RENDERER_FLAG_PREFER_BILLBOARD = 1 << 3                 # billboard fallback if AA points unavailable
+RENDERER_FLAG_BOUNDING_SPHERE_VALID = 1 << 4
+RENDERER_FLAG_BOUNDING_BOX_VALID = 1 << 5
+
+#: Reserved sentinel for "no visual encoding id" — the renderer
+#: should fall back to the colour/size baked into the points.
+VISUAL_ENCODING_ID_NONE: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -167,8 +216,31 @@ class UnavBinaryPoint:
 
 
 @dataclass
+class BinaryV2Extras:
+    """v2 extra-header block.
+
+    Only meaningful when the file's ``version`` is
+    ``FORMAT_VERSION_V2``. v1 readers ignore this block; v2 readers
+    parse it. The fields are documented in
+    ``docs/BINARY_VISIBLE_SECTOR_FORMAT.md`` §4 and §5.
+    """
+
+    renderer_flags: int = 0
+    visual_encoding_id: int = VISUAL_ENCODING_ID_NONE
+    sector_origin: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+    bounding_sphere: Tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
+    aabb_min: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+    aabb_max: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+
+
+@dataclass
 class BinaryHeader:
-    """Header fields read from / written to disk."""
+    """Header fields read from / written to disk.
+
+    The ``v2_extras`` field is populated only when the file is v2
+    (``version == FORMAT_VERSION_V2``); v1 files leave it at the
+    default. ``has_v2_extras()`` is the canonical predicate.
+    """
 
     magic: bytes = MAGIC
     version: int = FORMAT_VERSION
@@ -178,6 +250,10 @@ class BinaryHeader:
     source_count: int = 0
     header_extra_bytes: int = 0
     sidecar_path: str = ""
+    v2_extras: Optional[BinaryV2Extras] = None
+
+    def has_v2_extras(self) -> bool:
+        return self.version == FORMAT_VERSION_V2 and self.v2_extras is not None
 
 
 @dataclass
@@ -288,8 +364,55 @@ def build_source_table(
 # ---------------------------------------------------------------------------
 
 
+def _pack_v2_extras(extras: BinaryV2Extras) -> bytes:
+    return struct.pack(
+        _V2_EXTRA_HEADER_FMT,
+        int(extras.renderer_flags) & 0xFFFFFFFF,
+        int(extras.visual_encoding_id) & 0xFFFFFFFF,
+        float(extras.sector_origin[0]),
+        float(extras.sector_origin[1]),
+        float(extras.sector_origin[2]),
+        float(extras.bounding_sphere[0]),
+        float(extras.bounding_sphere[1]),
+        float(extras.bounding_sphere[2]),
+        float(extras.bounding_sphere[3]),
+        float(extras.aabb_min[0]),
+        float(extras.aabb_min[1]),
+        float(extras.aabb_min[2]),
+        float(extras.aabb_max[0]),
+        float(extras.aabb_max[1]),
+        float(extras.aabb_max[2]),
+    )
+
+
+def _unpack_v2_extras(raw: bytes) -> BinaryV2Extras:
+    if len(raw) != V2_EXTRA_HEADER_SIZE:
+        raise BinaryExportError(
+            f"v2 extras block size {len(raw)} != "
+            f"expected {V2_EXTRA_HEADER_SIZE}"
+        )
+    fields = struct.unpack(_V2_EXTRA_HEADER_FMT, raw)
+    return BinaryV2Extras(
+        renderer_flags=int(fields[0]),
+        visual_encoding_id=int(fields[1]),
+        sector_origin=(float(fields[2]), float(fields[3]), float(fields[4])),
+        bounding_sphere=(
+            float(fields[5]), float(fields[6]),
+            float(fields[7]), float(fields[8]),
+        ),
+        aabb_min=(float(fields[9]), float(fields[10]), float(fields[11])),
+        aabb_max=(float(fields[12]), float(fields[13]), float(fields[14])),
+    )
+
+
 def _pack_header(header: BinaryHeader) -> bytes:
     sidecar_bytes = (header.sidecar_path or "").encode("utf-8")
+    extras_bytes = b""
+    extra_len = int(header.header_extra_bytes) & 0xFFFFFFFF
+    if header.version == FORMAT_VERSION_V2:
+        extras = header.v2_extras or BinaryV2Extras()
+        extras_bytes = _pack_v2_extras(extras)
+        extra_len = len(extras_bytes)
     fixed = struct.pack(
         _HEADER_FMT,
         MAGIC,
@@ -298,10 +421,12 @@ def _pack_header(header: BinaryHeader) -> bytes:
         float(header.coordinate_scale_factor),
         int(header.point_count) & 0xFFFFFFFF,
         int(header.source_count) & 0xFFFFFFFF,
-        int(header.header_extra_bytes) & 0xFFFFFFFF,
+        extra_len,
         len(sidecar_bytes) & 0xFFFF,
     )
-    return fixed + sidecar_bytes
+    # v1 layout: header (30B) + sidecar.
+    # v2 layout: header (30B) + sidecar + extras_bytes.
+    return fixed + sidecar_bytes + extras_bytes
 
 
 def _pack_source_table(sources: Sequence[Tuple[int, str]]) -> bytes:
@@ -324,6 +449,8 @@ def write_visible_sector(
     sources: Sequence[Tuple[int, str]] = (),
     coordinate_scale_factor: float = 1.0,
     sidecar_path: str = "",
+    format_version: int = FORMAT_VERSION_V1,
+    v2_extras: Optional[BinaryV2Extras] = None,
 ) -> int:
     """Write the visible sector to ``path``. Returns total bytes
     written. Parent directories are created as needed.
@@ -333,20 +460,43 @@ def write_visible_sector(
     ``scale_mode='pc'``). ``sidecar_path`` is an optional relative
     path to a UTF-8 metadata sidecar (the JSONL produced by the
     rest of the plugin); ``""`` (default) means no sidecar.
+
+    ``format_version`` (v1.0+) selects the on-disk layout. v1 keeps
+    bit-for-bit parity with v0.8 / v0.9. v2 emits the extra header
+    block declared in
+    ``docs/BINARY_VISIBLE_SECTOR_FORMAT.md`` §4 carrying
+    ``renderer_flags``, ``visual_encoding_id``, ``sector_origin``,
+    ``bounding_sphere``, and the AABB. ``v2_extras`` is required
+    when ``format_version == FORMAT_VERSION_V2`` and ignored
+    otherwise.
     """
+    if format_version not in SUPPORTED_FORMAT_VERSIONS:
+        raise BinaryExportError(
+            f"unsupported format_version {format_version}; "
+            f"supported: {SUPPORTED_FORMAT_VERSIONS}"
+        )
     parent = os.path.dirname(os.path.abspath(path))
     if parent:
         os.makedirs(parent, exist_ok=True)
 
+    extras = v2_extras
+    if format_version == FORMAT_VERSION_V2 and extras is None:
+        # Caller asked for v2 without giving us extras — fill with
+        # zeros so the file is still well-formed.
+        extras = BinaryV2Extras()
+
     header = BinaryHeader(
         magic=MAGIC,
-        version=FORMAT_VERSION,
+        version=format_version,
         flags=0,
         coordinate_scale_factor=float(coordinate_scale_factor),
         point_count=len(points),
         source_count=len(sources),
-        header_extra_bytes=0,
+        header_extra_bytes=(
+            V2_EXTRA_HEADER_SIZE if format_version == FORMAT_VERSION_V2 else 0
+        ),
         sidecar_path=sidecar_path or "",
+        v2_extras=extras,
     )
 
     header_bytes = _pack_header(header)
@@ -376,8 +526,9 @@ def write_visible_sector(
 
 
 def _unpack_header(raw: bytes) -> Tuple[BinaryHeader, int]:
-    """Parse the fixed header (and, if present, the trailing
-    sidecar-path UTF-8). Returns ``(header, total_header_bytes)``."""
+    """Parse the fixed header, the optional sidecar path, and (for
+    v2 files) the extra-header block. Returns
+    ``(header, total_header_bytes)``."""
     if len(raw) < HEADER_SIZE:
         raise BinaryExportError(
             f"file too small to hold header: {len(raw)} < {HEADER_SIZE}"
@@ -390,10 +541,10 @@ def _unpack_header(raw: bytes) -> Tuple[BinaryHeader, int]:
         raise BinaryExportError(
             f"bad magic {magic!r}; expected {MAGIC!r}"
         )
-    if version != FORMAT_VERSION:
+    if int(version) not in SUPPORTED_FORMAT_VERSIONS:
         raise BinaryExportError(
             f"unsupported format version {version}; "
-            f"this build understands {FORMAT_VERSION}"
+            f"this build understands {SUPPORTED_FORMAT_VERSIONS}"
         )
     sidecar_end = HEADER_SIZE + int(sidecar_path_len)
     if sidecar_end > len(raw):
@@ -401,6 +552,27 @@ def _unpack_header(raw: bytes) -> Tuple[BinaryHeader, int]:
             "sidecar_path_len overruns file"
         )
     sidecar = raw[HEADER_SIZE:sidecar_end].decode("utf-8") if sidecar_path_len else ""
+
+    extras: Optional[BinaryV2Extras] = None
+    extras_end = sidecar_end
+    if int(version) == FORMAT_VERSION_V2:
+        if int(header_extra_bytes) != V2_EXTRA_HEADER_SIZE:
+            raise BinaryExportError(
+                f"v2 header_extra_bytes is {header_extra_bytes}; "
+                f"expected {V2_EXTRA_HEADER_SIZE}"
+            )
+        extras_end = sidecar_end + V2_EXTRA_HEADER_SIZE
+        if extras_end > len(raw):
+            raise BinaryExportError("v2 extras block overruns file")
+        extras = _unpack_v2_extras(raw[sidecar_end:extras_end])
+    elif int(version) == FORMAT_VERSION_V1:
+        if int(header_extra_bytes) != 0:
+            # v1 readers fail closed on a non-zero forward-compat
+            # slot — see BINARY_VISIBLE_SECTOR_FORMAT.md §3.3.
+            raise BinaryExportError(
+                "v1 header has non-zero header_extra_bytes; "
+                "use the v2 reader for that file"
+            )
     return (
         BinaryHeader(
             magic=magic,
@@ -411,8 +583,9 @@ def _unpack_header(raw: bytes) -> Tuple[BinaryHeader, int]:
             source_count=int(source_count),
             header_extra_bytes=int(header_extra_bytes),
             sidecar_path=sidecar,
+            v2_extras=extras,
         ),
-        sidecar_end,
+        extras_end,
     )
 
 
@@ -496,6 +669,106 @@ def read_visible_sector(path: str) -> BinaryVisibleSector:
 
 
 # ---------------------------------------------------------------------------
+# v2 helpers — bounding sphere / AABB / sector origin
+# ---------------------------------------------------------------------------
+
+
+def compute_aabb(
+    points: Sequence[UnavBinaryPoint],
+) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
+    """Tight axis-aligned bounding box over ``points``. Returns
+    ``((min_x, min_y, min_z), (max_x, max_y, max_z))``. An empty
+    sequence yields the zero-volume box at the origin so the
+    on-disk fields stay valid."""
+    if not points:
+        return (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)
+    xs = [p.x for p in points]
+    ys = [p.y for p in points]
+    zs = [p.z for p in points]
+    return (min(xs), min(ys), min(zs)), (max(xs), max(ys), max(zs))
+
+
+def compute_bounding_sphere(
+    points: Sequence[UnavBinaryPoint],
+) -> Tuple[float, float, float, float]:
+    """Centroid-centred bounding sphere over ``points``. Not the
+    minimum-enclosing sphere (Welzl's algorithm) — the centroid
+    sphere is good enough for the renderer's frustum-culling and
+    has a closed-form, fast computation. Returns
+    ``(cx, cy, cz, radius)``. Empty input yields a zero-radius
+    sphere at the origin."""
+    if not points:
+        return (0.0, 0.0, 0.0, 0.0)
+    n = float(len(points))
+    cx = sum(p.x for p in points) / n
+    cy = sum(p.y for p in points) / n
+    cz = sum(p.z for p in points) / n
+    radius_sq = 0.0
+    for p in points:
+        dx = p.x - cx
+        dy = p.y - cy
+        dz = p.z - cz
+        d2 = dx * dx + dy * dy + dz * dz
+        if d2 > radius_sq:
+            radius_sq = d2
+    return (cx, cy, cz, radius_sq ** 0.5)
+
+
+def make_v2_extras(
+    points: Sequence[UnavBinaryPoint],
+    *,
+    visual_encoding_id: int = VISUAL_ENCODING_ID_NONE,
+    renderer_flags: int = 0,
+    sector_origin: Optional[Tuple[float, float, float]] = None,
+) -> BinaryV2Extras:
+    """Compute a populated ``BinaryV2Extras`` for ``points``.
+
+    By default ``sector_origin`` is the centroid of the points;
+    callers passing camera-relative-rendering can override with
+    the active navigator's pose. The bounding-sphere /
+    bounding-box flags are turned on automatically when there is
+    at least one point. ``visual_encoding_id`` is the caller's
+    cache key (``0`` means "renderer falls back to baked colour /
+    size")."""
+    sphere = compute_bounding_sphere(points)
+    aabb_min, aabb_max = compute_aabb(points)
+    if sector_origin is None:
+        sector_origin = (sphere[0], sphere[1], sphere[2])
+    flags = int(renderer_flags)
+    if points:
+        flags |= RENDERER_FLAG_BOUNDING_SPHERE_VALID
+        flags |= RENDERER_FLAG_BOUNDING_BOX_VALID
+    return BinaryV2Extras(
+        renderer_flags=flags,
+        visual_encoding_id=int(visual_encoding_id),
+        sector_origin=sector_origin,
+        bounding_sphere=sphere,
+        aabb_min=aabb_min,
+        aabb_max=aabb_max,
+    )
+
+
+def make_relative_points(
+    points: Sequence[UnavBinaryPoint],
+    sector_origin: Tuple[float, float, float],
+) -> List[UnavBinaryPoint]:
+    """Return a new list with every point's xyz expressed relative
+    to ``sector_origin``. Used by the camera-relative rendering
+    path: the binary file then carries small floats (point
+    distances from the cluster centroid) regardless of how far
+    the absolute coordinates are from the C4D origin."""
+    out: List[UnavBinaryPoint] = []
+    ox, oy, oz = sector_origin
+    for p in points:
+        out.append(UnavBinaryPoint(
+            x=p.x - ox, y=p.y - oy, z=p.z - oz,
+            size=p.size, r=p.r, g=p.g, b=p.b,
+            uid_hash=p.uid_hash, source_id=p.source_id,
+        ))
+    return out
+
+
+# ---------------------------------------------------------------------------
 # CatalogObject → file end-to-end
 # ---------------------------------------------------------------------------
 
@@ -507,6 +780,11 @@ def export_objects(
     encoding=None,
     scale_mode: str = DEFAULT_SCALE_MODE,
     sidecar_path: str = "",
+    format_version: int = FORMAT_VERSION_V1,
+    visual_encoding_id: int = VISUAL_ENCODING_ID_NONE,
+    sector_origin: Optional[Tuple[float, float, float]] = None,
+    camera_relative: bool = False,
+    renderer_flags: int = 0,
 ) -> Tuple[int, BinaryHeader, List[Tuple[int, str]]]:
     """Convenience: convert a sequence of ``CatalogObject`` into
     binary points and write them. Returns
@@ -514,6 +792,19 @@ def export_objects(
 
     The source IDs are assigned in first-seen order starting at 1;
     the C++ side reads them straight off the file's source table.
+
+    v1.0 additions (only used when ``format_version=FORMAT_VERSION_V2``):
+
+    * ``visual_encoding_id`` — caller's cache key (e.g. a hash of
+      the ``VisualEncodingParams``); ``0`` defers to baked colour.
+    * ``sector_origin`` — explicit C4D-units sector origin for the
+      camera-relative-rendering path. ``None`` falls back to the
+      bounding-sphere centre when ``camera_relative=True``.
+    * ``camera_relative`` — when True, the points are rewritten as
+      offsets from ``sector_origin`` and the
+      ``RENDERER_FLAG_POINTS_RELATIVE_TO_SECTOR_ORIGIN`` bit is
+      set in the header. v2 readers re-add the origin at draw time.
+    * ``renderer_flags`` — extra flags ORed into the v2 header.
     """
     sources, name_to_id = build_source_table(objects)
     points: List[UnavBinaryPoint] = []
@@ -531,18 +822,43 @@ def export_objects(
             continue
 
     scale_factor = SCALE_MODES.get(scale_mode, 1.0)
+
+    extras: Optional[BinaryV2Extras] = None
+    points_to_write = list(points)
+    if format_version == FORMAT_VERSION_V2:
+        extras = make_v2_extras(
+            points,
+            visual_encoding_id=visual_encoding_id,
+            renderer_flags=renderer_flags,
+            sector_origin=sector_origin,
+        )
+        if camera_relative:
+            extras.renderer_flags |= (
+                RENDERER_FLAG_POINTS_RELATIVE_TO_SECTOR_ORIGIN
+            )
+            points_to_write = make_relative_points(
+                points, extras.sector_origin,
+            )
+
     bytes_written = write_visible_sector(
-        path, points,
+        path, points_to_write,
         sources=sources,
         coordinate_scale_factor=scale_factor,
         sidecar_path=sidecar_path,
+        format_version=format_version,
+        v2_extras=extras,
     )
     header = BinaryHeader(
-        version=FORMAT_VERSION,
+        version=format_version,
         flags=0,
         coordinate_scale_factor=float(scale_factor),
-        point_count=len(points),
+        point_count=len(points_to_write),
         source_count=len(sources),
+        header_extra_bytes=(
+            V2_EXTRA_HEADER_SIZE
+            if format_version == FORMAT_VERSION_V2 else 0
+        ),
         sidecar_path=sidecar_path or "",
+        v2_extras=extras,
     )
     return bytes_written, header, sources

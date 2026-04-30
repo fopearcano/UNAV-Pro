@@ -31,6 +31,9 @@
 #include <sstream>
 #include <utility>
 
+#include "unav_gpu_buffer.h"
+#include "unav_renderer.h"
+
 #ifdef UNAV_USE_MAXON_SDK
 #include "c4d.h"  // NOLINT(build/include)
 #endif
@@ -196,6 +199,8 @@ std::size_t LoadFromRequestFile(UnavPointBuffer& buffer,
   status.point_count = buffer.size();
   status.file_size_bytes = buffer.lastLoadStats().file_size_bytes;
   status.load_seconds = buffer.lastLoadStats().load_seconds;
+  status.estimated_gpu_bytes = buffer.lastLoadStats().estimated_gpu_bytes;
+  status.format_version = buffer.lastLoadStats().format_version;
   if (loaded == 0 && err.size() > 0 && err.rfind("warning:", 0) != 0) {
     status.error = err;
   }
@@ -218,7 +223,13 @@ bool WriteStatusFile(const EngineStatus& status,
       << (status.engine_available ? "true" : "false") << ",\n";
   oss << "  \"engine_version\": \"" << jsonEscape(status.engine_version) << "\",\n";
   oss << "  \"error\": \"" << jsonEscape(status.error) << "\",\n";
+  oss << "  \"estimated_gpu_bytes\": " << status.estimated_gpu_bytes << ",\n";
   oss << "  \"file_size_bytes\": " << status.file_size_bytes << ",\n";
+  oss << "  \"format_version\": " << status.format_version << ",\n";
+  oss << "  \"gpu_backend\": \"" << jsonEscape(status.gpu_backend) << "\",\n";
+  oss << "  \"gpu_bytes\": " << status.gpu_bytes << ",\n";
+  oss << "  \"gpu_uploaded\": "
+      << (status.gpu_uploaded ? "true" : "false") << ",\n";
   oss << "  \"last_load_iso\": \"" << jsonEscape(isoNow()) << "\",\n";
   oss << "  \"last_request_id\": \"" << jsonEscape(status.last_request_id) << "\",\n";
   oss << "  \"load_seconds\": " << status.load_seconds << ",\n";
@@ -250,10 +261,12 @@ bool WriteSelectionFile(std::uint64_t uidHash,
 EngineStatus QueryEngineStatus() {
   EngineStatus s{};
   s.engine_available = true;
-  s.engine_version = "0.9.0";
-  s.description = "UNAV native engine — v0.9 prototype "
-                  "(BaseDraw::DrawPoint per-point; full DrawArray "
-                  "lands in v0.10).";
+  s.engine_version = "1.0.0";
+  s.description = "UNAV native engine v1.0 — GPU-backed point "
+                  "renderer with v2 binary loader, camera-relative "
+                  "rendering, and accelerated picking. CPU "
+                  "fallback engages automatically when the SDK's "
+                  "GPU draw path is unavailable.";
   return s;
 }
 
@@ -264,8 +277,70 @@ EngineStatus QueryEngineStatus() {
 #ifdef UNAV_USE_MAXON_SDK
 
 namespace {
-// One-process-wide buffer the ObjectData class shares.
+
+// Process-wide singletons shared by the SDK-bound classes. The
+// buffer holds the loaded points (CPU shadow). The GPU buffer
+// shadows them for the renderer; in v1.0 we still draw via
+// `BaseDraw::DrawPoint` per vertex (the GPU buffer is the
+// future-facing layer that v1.1+ flips to `DrawArray`). The
+// renderer config the dialog edits lives here too so a Reload
+// command does not reset it.
 UnavPointBuffer gNativeBuffer;
+
+class SdkGpuBuffer : public UnavGpuBuffer {
+ protected:
+  bool uploadImpl() override {
+    // v1.0: Maxon's `BaseDraw::DrawArrayWithVertexBuffer` is not
+    // a portable GPU upload (the host owns the device); we
+    // therefore stay on the CPU shadow and fall back to per-point
+    // draw calls. v1.1 swaps in the SDK's actual VBO call.
+    setBackendName("c4d_cpu_shadow");
+    return false;
+  }
+  void freeImpl() override {}
+};
+
+class SdkRenderer : public UnavRenderer {
+ public:
+  SdkRenderer() {
+    setBackendName("c4d_basedraw_perpoint");
+  }
+  void bindHostDraw(BaseDraw* bd) noexcept { hostDraw_ = bd; }
+
+ protected:
+  std::size_t drawImpl(const GpuVertex* vertices, std::size_t count,
+                       const RenderConfig& cfg) override {
+    if (hostDraw_ == nullptr || vertices == nullptr || count == 0) {
+      return 0;
+    }
+    std::size_t drawn = 0;
+    for (std::size_t i = 0; i < count; ++i) {
+      const auto& v = vertices[i];
+      const double dx = v.x - cfg.camera_origin[0];
+      const double dy = v.y - cfg.camera_origin[1];
+      const double dz = v.z - cfg.camera_origin[2];
+      const double distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+      float r, g, b, a;
+      shadeVertex(v, distance, cfg, &r, &g, &b, &a);
+      if (a <= 0.0f) continue;
+      hostDraw_->SetPen(Vector(r, g, b));
+      // v1.0 keeps the per-point draw call. The per-vertex `size`
+      // is honoured by Maxon's editor when DRAWPATH supports it;
+      // anti-aliased circular points are the SDK default for
+      // `DrawPoint` on most hosts.
+      hostDraw_->DrawPoint(Vector(v.x, v.y, v.z));
+      ++drawn;
+    }
+    return drawn;
+  }
+
+ private:
+  BaseDraw* hostDraw_ = nullptr;
+};
+
+SdkGpuBuffer gGpuBuffer;
+SdkRenderer  gRenderer;
+
 }  // namespace
 
 class UnavStarfield : public ObjectData {  // NOLINT(build/include_what_you_use)
@@ -273,27 +348,24 @@ class UnavStarfield : public ObjectData {  // NOLINT(build/include_what_you_use)
   static NodeData* Alloc() { return NewObjClear(UnavStarfield); }
 
   Bool Init(GeListNode* node) override {
+    gRenderer.setGpuBuffer(&gGpuBuffer);
     return ObjectData::Init(node);
   }
 
   void Free(GeListNode* node) override {
+    gRenderer.shutdown();
     ObjectData::Free(node);
   }
 
-  // The viewport calls this on every redraw. v0.9 issues per-point
-  // `DrawPoint` calls — slow above ~10 k points, fine for a
-  // prototype that demonstrates the pipeline. v0.10 replaces this
-  // with a single `DrawArray` call.
   DRAWRESULT Draw(BaseObject* op, DRAWPASS drawpass,
                   BaseDraw* bd, BaseDrawHelp* bh) override {
     if (drawpass != DRAWPASS_OBJECT) return DRAWRESULT_SKIP;
-    const auto* points = gNativeBuffer.data();
-    const std::size_t n = gNativeBuffer.size();
-    for (std::size_t i = 0; i < n; ++i) {
-      const auto& p = points[i];
-      bd->SetPen(Vector(p.r, p.g, p.b));
-      bd->DrawPoint(Vector(p.x, p.y, p.z));
+    if (gNativeBuffer.empty()) return DRAWRESULT_OK;
+    if (!gGpuBuffer.isUploaded() && gGpuBuffer.empty()) {
+      gGpuBuffer.buildFromCpu(gNativeBuffer);
     }
+    gRenderer.bindHostDraw(bd);
+    gRenderer.draw();
     return DRAWRESULT_OK;
   }
 };
@@ -309,6 +381,8 @@ class UnavReloadCommand : public CommandData {
     const std::string req = base + "native_request.json";
     const std::string stat = base + "native_status.json";
     LoadFromRequestFile(gNativeBuffer, req, stat);
+    // Rebuild the GPU shadow from the freshly-loaded CPU buffer.
+    gGpuBuffer.buildFromCpu(gNativeBuffer);
     EventAdd();
     return true;
   }

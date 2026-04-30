@@ -45,18 +45,33 @@ endif()
 # bridge file format the same way the Python tests do.
 # -----------------------------------------------------------------------------
 
-add_executable(test_unav_point_buffer
+set(UNAV_NATIVE_CORE_SOURCES
   src/unav_point_buffer.cpp
   src/unav_native_plugin.cpp
+  src/unav_gpu_buffer.cpp
+  src/unav_renderer.cpp
+)
+
+add_executable(test_unav_point_buffer
+  ${UNAV_NATIVE_CORE_SOURCES}
   tests/test_unav_point_buffer.cpp
 )
 target_include_directories(test_unav_point_buffer
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(test_unav_point_buffer PUBLIC cxx_std_17)
 
-# Re-export it under the conventional `ctest`-friendly target name.
+add_executable(test_unav_gpu_renderer
+  ${UNAV_NATIVE_CORE_SOURCES}
+  tests/test_unav_gpu_renderer.cpp
+)
+target_include_directories(test_unav_gpu_renderer
+  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_features(test_unav_gpu_renderer PUBLIC cxx_std_17)
+
+# Re-export under the conventional `ctest`-friendly target names.
 enable_testing()
 add_test(NAME unav_point_buffer COMMAND test_unav_point_buffer)
+add_test(NAME unav_gpu_renderer COMMAND test_unav_gpu_renderer)
 
 if(NOT UNAV_NATIVE_BUILD)
   return()
