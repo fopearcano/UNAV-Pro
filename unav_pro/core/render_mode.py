@@ -38,11 +38,13 @@ from typing import Dict, Optional, Tuple
 RENDER_MODE_DEBUG_OBJECTS = "debug_objects"
 RENDER_MODE_INSTANCES = "instances"
 RENDER_MODE_POINT_CLOUD = "point_cloud"
+RENDER_MODE_NATIVE_VIEWER = "native_viewer"
 
 RENDER_MODES: Tuple[str, ...] = (
     RENDER_MODE_DEBUG_OBJECTS,
     RENDER_MODE_INSTANCES,
     RENDER_MODE_POINT_CLOUD,
+    RENDER_MODE_NATIVE_VIEWER,
 )
 
 #: Default render mode. ``debug_objects`` keeps v0.1 behaviour for
@@ -54,6 +56,7 @@ RENDER_MODE_LABELS: Tuple[Tuple[str, str], ...] = (
     ("Debug Objects (one null per point)", RENDER_MODE_DEBUG_OBJECTS),
     ("Instances (shared template)", RENDER_MODE_INSTANCES),
     ("Point Cloud (experimental)", RENDER_MODE_POINT_CLOUD),
+    ("Native Point Viewer (Experimental)", RENDER_MODE_NATIVE_VIEWER),
 )
 
 
@@ -70,7 +73,17 @@ DEFAULT_CAPS: Dict[str, int] = {
     RENDER_MODE_DEBUG_OBJECTS: 10_000,
     RENDER_MODE_INSTANCES: 200_000,
     RENDER_MODE_POINT_CLOUD: 1_000_000,
+    # v0.9 native point viewer: configurable safety cap. The C++
+    # plugin enforces the same limit on its side; the Python
+    # exporter clips early so the file on disk is never bigger
+    # than this many points.
+    RENDER_MODE_NATIVE_VIEWER: 2_000_000,
 }
+
+#: Above this many visible objects in native-viewer mode the
+#: dialog emits a soft warning. The exporter still proceeds; the
+#: hard cap applies on top.
+NATIVE_VIEWER_SOFT_WARNING = 500_000
 
 #: Above this many visible objects in debug-objects mode the dialog
 #: emits a soft warning. The user can still proceed; the cap above
@@ -94,6 +107,8 @@ def soft_warning_for_mode(mode: str) -> Optional[int]:
         return DEBUG_OBJECTS_SOFT_WARNING
     if mode == RENDER_MODE_INSTANCES:
         return INSTANCES_SOFT_WARNING
+    if mode == RENDER_MODE_NATIVE_VIEWER:
+        return NATIVE_VIEWER_SOFT_WARNING
     return None
 
 
@@ -239,6 +254,21 @@ CAPABILITIES: Dict[str, ModeCapabilities] = {
         supports_per_instance_metadata=False,
         soft_warning=None,
         hard_cap=DEFAULT_CAPS[RENDER_MODE_POINT_CLOUD],
+    ),
+    RENDER_MODE_NATIVE_VIEWER: ModeCapabilities(
+        mode=RENDER_MODE_NATIVE_VIEWER,
+        name="Native Point Viewer (Experimental)",
+        description=(
+            "v0.9 prototype: Python writes a binary visible-sector "
+            "file; the native C++ plugin (when loaded) draws the "
+            "points directly. No per-object C4D node is created; "
+            "selection uses the native pick file with a search-based "
+            "fallback when the native plugin is not available."
+        ),
+        supports_per_object_selection=False,
+        supports_per_instance_metadata=False,
+        soft_warning=NATIVE_VIEWER_SOFT_WARNING,
+        hard_cap=DEFAULT_CAPS[RENDER_MODE_NATIVE_VIEWER],
     ),
 }
 

@@ -76,6 +76,13 @@ _ID_COMBO_RENDER_MODE = 9101
 _ID_RENDER_STATS = 9102
 _RENDER_COMBO_BASE = 9200
 
+# v0.9 — Native Point Viewer bridge controls.
+_ID_GROUP_NATIVE = 9300
+_ID_BTN_NATIVE_EXPORT = 9301
+_ID_BTN_NATIVE_RELOAD = 9302
+_ID_BTN_NATIVE_TOGGLE = 9303
+_ID_NATIVE_STATUS = 9304
+
 # v0.6 — UX layer: search, bookmarks, navigation controller.
 _ID_GROUP_TABS = 10000
 _ID_TAB_SEARCH = 10100
@@ -214,6 +221,30 @@ if _C4D_AVAILABLE:
             )
             self.GroupEnd()
 
+            # Native Point Viewer bridge (v0.9).
+            self.GroupBegin(
+                _ID_GROUP_NATIVE, c4d.BFH_SCALEFIT, cols=3, rows=2,
+                title="Native Point Viewer (Experimental)",
+            )
+            self.GroupBorderSpace(8, 8, 8, 8)
+            self.AddButton(
+                _ID_BTN_NATIVE_EXPORT, c4d.BFH_SCALEFIT,
+                name="Export Visible Sector (Binary)",
+            )
+            self.AddButton(
+                _ID_BTN_NATIVE_RELOAD, c4d.BFH_SCALEFIT,
+                name="Reload Native Viewer",
+            )
+            self.AddButton(
+                _ID_BTN_NATIVE_TOGGLE, c4d.BFH_SCALEFIT,
+                name="Toggle Native Viewer Mode",
+            )
+            self.AddStaticText(
+                _ID_NATIVE_STATUS, c4d.BFH_SCALEFIT,
+                name="(native viewer: not loaded)",
+            )
+            self.GroupEnd()
+
             # Buttons grid.
             self.GroupBegin(
                 _ID_GROUP_BUTTONS, c4d.BFH_SCALEFIT, cols=2, rows=8,
@@ -318,6 +349,10 @@ if _C4D_AVAILABLE:
         _bookmarks = None
         _target_lock = None
         _nav_controller = None
+
+        # v0.9 — Native Point Viewer toggle remembers the last
+        # non-native render-mode choice so Toggle flips back to it.
+        _previous_render_mode_token = None
 
         # ------------------------------------------------- v0.6 tab builders
 
@@ -445,6 +480,13 @@ if _C4D_AVAILABLE:
                 self.SetString(_ID_NAV_STATUS, "(no target locked)")
             except Exception:  # noqa: BLE001
                 pass
+            # v0.9 — surface the native-viewer status the moment the
+            # dialog opens; the bridge file may exist from a prior
+            # session.
+            try:
+                self._refresh_native_status()
+            except Exception:  # noqa: BLE001
+                pass
             return True
 
         def _refresh_workflow_hint(self) -> None:
@@ -519,6 +561,18 @@ if _C4D_AVAILABLE:
                     self._refresh_render_stats()
                 elif mid == _ID_COMBO_RENDER_MODE:
                     self._on_render_mode_changed()
+                elif mid == _ID_BTN_NATIVE_EXPORT:
+                    self._append_log(
+                        mock_actions.export_visible_sector_binary(
+                            encoding=self._read_encoding(),
+                        )
+                    )
+                    self._refresh_native_status()
+                elif mid == _ID_BTN_NATIVE_RELOAD:
+                    self._append_log(mock_actions.reload_native_viewer())
+                    self._refresh_native_status()
+                elif mid == _ID_BTN_NATIVE_TOGGLE:
+                    self._do_toggle_native_viewer_mode()
                 elif mid == _ID_CHK_AUTO_SYNC:
                     self._append_log(
                         "Auto Sync: not yet implemented; "
@@ -692,6 +746,59 @@ if _C4D_AVAILABLE:
                 f"Render Mode: switched to {caps.name} — "
                 f"{caps.short_summary()}"
             )
+
+        # --- v0.9 Native Viewer helpers -------------------------------
+
+        def _refresh_native_status(self) -> None:
+            """Pull the most recent status the native plugin wrote
+            and surface a one-line summary in the Native bridge
+            strip. When the native plugin is not loaded, the dialog
+            says so plainly."""
+            from core.native_bridge import read_status
+            try:
+                status = read_status()
+            except Exception:  # noqa: BLE001 — UI boundary
+                self.SetString(
+                    _ID_NATIVE_STATUS,
+                    "(native viewer: status read failed)",
+                )
+                return
+            if status is None:
+                self.SetString(
+                    _ID_NATIVE_STATUS,
+                    "(native viewer: no status file — Python fallback)",
+                )
+                return
+            self.SetString(_ID_NATIVE_STATUS, status.short_summary())
+
+        def _do_toggle_native_viewer_mode(self) -> None:
+            """Flip the Render Mode combo between the user's last
+            non-native choice and Native Point Viewer."""
+            from core.render_mode import (
+                DEFAULT_RENDER_MODE,
+                RENDER_MODE_LABELS,
+                RENDER_MODE_NATIVE_VIEWER,
+            )
+            current = self._read_render_mode()
+            if current == RENDER_MODE_NATIVE_VIEWER:
+                target = (
+                    self._previous_render_mode_token
+                    or DEFAULT_RENDER_MODE
+                )
+            else:
+                self._previous_render_mode_token = current
+                target = RENDER_MODE_NATIVE_VIEWER
+            for i, (_label, token) in enumerate(RENDER_MODE_LABELS):
+                if token == target:
+                    self.SetInt32(
+                        _ID_COMBO_RENDER_MODE, _RENDER_COMBO_BASE + i,
+                    )
+                    break
+            self._on_render_mode_changed()
+            self._append_log(
+                mock_actions.native_viewer_status()
+            )
+            self._refresh_native_status()
 
         # --- Route panel handlers ----------------------------------
 

@@ -57,6 +57,7 @@ from core.render_mode import (
     DEFAULT_RENDER_MODE,
     RENDER_MODE_DEBUG_OBJECTS,
     RENDER_MODE_INSTANCES,
+    RENDER_MODE_NATIVE_VIEWER,
     RENDER_MODE_POINT_CLOUD,
     capabilities_for,
     validate_mode,
@@ -548,4 +549,7 @@ def backend_for_mode(mode: str) -> RenderBackend:
         return InstanceBackend()
     if token == RENDER_MODE_POINT_CLOUD:
         return PointCloudBackend()
+    if token == RENDER_MODE_NATIVE_VIEWER:
+        from c4d_objects.native_viewer_backend import NativeViewerBackend
+        return NativeViewerBackend()
     return DebugObjectsBackend()

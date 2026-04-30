@@ -417,3 +417,78 @@ def test_cli_writes_file_for_valid_input(tmp_path):
     assert rc == 0
     parsed = read_visible_sector(str(out))
     assert parsed.header.point_count == 3
+
+
+# ---------------------------------------------------------------------------
+# v0.9 — navigator-state CLI mode
+# ---------------------------------------------------------------------------
+
+
+def test_v09_cli_dataset_requires_navigator_state(tmp_path):
+    from tools import export_visible_sector_binary
+    rc = export_visible_sector_binary.main([
+        "--dataset", str(tmp_path),
+        "--output", str(tmp_path / "out.unav"),
+        "--quiet",
+    ])
+    assert rc == 2
+
+
+def test_v09_cli_dataset_with_navigator_state_runs_filter(tmp_path):
+    """End-to-end: build an indexed dataset on disk, write a
+    navigator-state JSON, run the CLI in --dataset mode, and parse
+    the output binary."""
+    import json
+    from core.spatial_index import build_index
+    from data.catalog_io import write_catalog
+    from tools import export_visible_sector_binary
+
+    objects = []
+    # Three rows, all on the +X axis at d=10 pc; the navigator
+    # at origin facing +X has cone_angle=180 so they all pass.
+    for i in range(3):
+        o = _obj(f"gaia:{i}", "Gaia DR3")
+        o.ra_deg = 0.0
+        o.dec_deg = 0.0
+        o.distance_parsec = 10.0 + float(i)
+        compute_derived_fields(o)
+        objects.append(o)
+
+    # Tiny catalog file + indexed dataset.
+    src_jsonl = tmp_path / "src.jsonl"
+    write_catalog(objects, str(src_jsonl))
+    index_dir = tmp_path / "index"
+    build_index(objects, str(index_dir), chunk_size=10)
+
+    # Navigator state: at origin, facing +X, far_clip wide.
+    nav_state = {
+        "pose": {
+            "origin_c4d": [0.0, 0.0, 0.0],
+            "forward":    [1.0, 0.0, 0.0],
+        },
+        "params": {
+            "near_clip_parsec": 0.0,
+            "far_clip_parsec": 1000.0,
+            "cone_angle_deg": 89.0,
+            "max_visible_objects": 0,
+            # Empty source list disables source filtering so the
+            # navigator's default ("unav_sample") doesn't reject our
+            # Gaia rows.
+            "selected_catalog_sources": [],
+        },
+    }
+    nav_path = tmp_path / "nav.json"
+    with open(nav_path, "w", encoding="utf-8") as fh:
+        json.dump(nav_state, fh)
+
+    out_path = tmp_path / "visible.unav"
+    rc = export_visible_sector_binary.main([
+        "--dataset", str(index_dir),
+        "--navigator-state", str(nav_path),
+        "--output", str(out_path),
+        "--quiet",
+    ])
+    assert rc == 0
+    parsed = read_visible_sector(str(out_path))
+    # Every catalog row should pass the filter at this navigator pose.
+    assert parsed.header.point_count == 3

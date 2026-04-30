@@ -763,3 +763,155 @@ def reset_preferences(*, delete_file: bool = False) -> str:
         return f"Reset Preferences: {path}{suffix}"
 
     return _safe("Reset Preferences", _do)
+
+
+# ---------------------------------------------------------------------------
+# v0.9 — Native Point Viewer bridge handlers
+# ---------------------------------------------------------------------------
+
+
+def export_visible_sector_binary(
+    catalog_path: Optional[str] = None,
+    encoding=None,
+) -> str:
+    """Export the navigator-filtered visible sector to the v0.8
+    binary format under the user's bridge directory.
+
+    Mirrors ``sync_visible_sector`` in everything except the
+    output: the diff is computed exactly as the live sync does,
+    but the result is a single binary file the native plugin can
+    load — no per-object C4D nodes are created. Returns a status
+    line for the dialog log.
+    """
+
+    def _do() -> str:
+        from core.native_bridge import (
+            default_sidecar_path, default_visible_sector_path,
+            make_load_request, write_request,
+        )
+        from data.binary_export import export_objects
+        import json as _json
+
+        doc, err = _active_document("export visible sector binary")
+        if err is not None:
+            return err
+
+        # Same streaming-or-fallback resolver the live sync uses.
+        filtered, frag, used_filter, stream = _stream_for_active_navigator(doc)
+        warning_suffix = _format_stream_warnings(stream)
+        if not used_filter:
+            objects, load_err = _load_objects_or_message(catalog_path)
+            if load_err is not None:
+                return load_err
+            if not objects:
+                return "catalog is empty"
+            filtered, frag, used_filter = _filter_for_active_navigator(objects)
+            warning_suffix = ""
+        if not used_filter:
+            return f"cannot export without navigator: {frag}"
+
+        from c4d_objects.navigation_null import (
+            find_navigator, get_navigation_filter_params,
+        )
+        navigator = find_navigator(doc)
+        if navigator is None:
+            return "no UNAV_Navigator in scene"
+        params = get_navigation_filter_params(navigator)
+
+        binary_path = default_visible_sector_path()
+        sidecar_path = default_sidecar_path()
+
+        try:
+            bytes_written, header, sources = export_objects(
+                binary_path, filtered,
+                encoding=encoding, scale_mode=params.c4d_scale,
+                sidecar_path=os.path.basename(sidecar_path),
+            )
+        except Exception as exc:  # noqa: BLE001
+            return f"binary export failed: {exc}"
+
+        # Drop a uid-resolvable JSONL sidecar next to the binary.
+        try:
+            os.makedirs(os.path.dirname(sidecar_path), exist_ok=True)
+            with open(sidecar_path, "w", encoding="utf-8") as fh:
+                for obj in filtered:
+                    if not getattr(obj, "uid", None):
+                        continue
+                    fh.write(_json.dumps(
+                        obj.to_dict(), ensure_ascii=False, sort_keys=True,
+                    ))
+                    fh.write("\n")
+        except OSError as exc:
+            return f"sidecar write failed: {exc}"
+
+        # Notify the native plugin (or the next reload click).
+        try:
+            write_request(make_load_request(
+                binary_path, sidecar_path=sidecar_path,
+            ))
+        except Exception:  # noqa: BLE001
+            _log.exception("Failed to write native load request.")
+
+        return (
+            f"Export Binary: {header.point_count} points → "
+            f"{binary_path} ({bytes_written} bytes); "
+            f"filter: {frag}{warning_suffix}"
+        )
+
+    return _safe("Export Visible Sector (Binary)", _do)
+
+
+def reload_native_viewer() -> str:
+    """Re-issue the load request so the native plugin re-reads the
+    cached binary file. The dialog calls this after the artist edits
+    the navigator without re-running Sync."""
+
+    def _do() -> str:
+        from core.native_bridge import (
+            default_sidecar_path, default_visible_sector_path,
+            make_load_request, read_status, write_request,
+        )
+
+        binary_path = default_visible_sector_path()
+        if not os.path.isfile(binary_path):
+            return (
+                "Reload Native Viewer: no cached binary found; "
+                "click Export Visible Sector (Binary) first."
+            )
+        try:
+            write_request(make_load_request(
+                binary_path, sidecar_path=default_sidecar_path(),
+            ))
+        except Exception as exc:  # noqa: BLE001
+            return f"Reload Native Viewer: request write failed: {exc}"
+        status = None
+        try:
+            status = read_status()
+        except Exception:  # noqa: BLE001
+            pass
+        suffix = (
+            f"; {status.short_summary()}"
+            if status is not None else ""
+        )
+        return f"Reload Native Viewer: requested reload of {binary_path}{suffix}"
+
+    return _safe("Reload Native Viewer", _do)
+
+
+def native_viewer_status() -> str:
+    """Return a short summary of the native plugin's state. Used
+    by the dialog's stats strip and as a no-op log line for
+    Toggle Native Viewer Mode when the artist wants a quick
+    health check."""
+
+    def _do() -> str:
+        from core.native_bridge import read_status
+        try:
+            status = read_status()
+        except Exception as exc:  # noqa: BLE001
+            return f"Native viewer: status read failed: {exc}"
+        if status is None:
+            return "Native viewer: no status file (engine not loaded)."
+        return f"Native viewer: {status.short_summary()}"
+
+    return _safe("Native Viewer Status", _do)

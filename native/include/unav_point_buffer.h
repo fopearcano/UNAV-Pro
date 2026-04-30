@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: MIT
 //
-// UNAV Pro — Native point buffer header (v0.8 feasibility spike).
+// UNAV Pro — Native point buffer (v0.9 prototype).
 //
-// This file pins the C++ surface that the v0.9 implementation will
-// flesh out. Every member declared here corresponds to either a
-// field in the on-disk binary visible-sector format (see
-// `docs/BINARY_VISIBLE_SECTOR_FORMAT.md`) or a method the future
-// `BaseDraw` callback / picking bridge needs.
+// The C++ surface that owns the visible-sector points the future
+// Cinema 4D plugin draws. v0.9 implements a real binary loader
+// against the format documented in
+// `docs/BINARY_VISIBLE_SECTOR_FORMAT.md`, plus a simple
+// nearest-point hit-test for the selection bridge.
 //
-// Today, all method bodies live in `src/unav_point_buffer.cpp` as
-// stubs that return safely-empty values. The point of v0.8 is to
-// freeze the shape, not to ship the implementation.
+// The class is intentionally SDK-free so the loader / hit-test /
+// safety logic can be unit-tested in a plain C++17 host — see
+// `native/tests/test_unav_point_buffer.cpp`. The Maxon-bound
+// drawing wrapper lives in `unav_native_plugin.cpp`.
 
 #pragma once
 
@@ -22,10 +23,10 @@
 namespace unav {
 
 // ----------------------------------------------------------------------------
-// UnavPoint — mirrors the on-disk record exactly.
+// UnavPoint — mirrors the on-disk record exactly (52 bytes packed).
 // ----------------------------------------------------------------------------
 //
-// On-disk layout (little-endian, packed, 52 bytes per record):
+// On-disk layout (little-endian, packed):
 //
 //   double x, y, z         (3 × 8 = 24 bytes)
 //   float  size            (4 bytes)
@@ -33,14 +34,8 @@ namespace unav {
 //   uint64 uid_hash        (8 bytes)
 //   uint32 source_id       (4 bytes)
 //
-// The C++ struct is *also* 52 bytes when compiled with the packing
-// pragma below; the implementation in `unav_point_buffer.cpp` is
-// expected to use `static_assert(sizeof(UnavPoint) == 52)` to lock
-// the parity with the Python exporter.
-//
-// `uid_hash` is a 64-bit BLAKE2b digest of the original UNAV uid;
-// the original string lives in the metadata sidecar referenced by
-// the file's header.
+// Cross-checked against the Python writer via `static_assert`
+// below.
 
 #pragma pack(push, 1)
 struct UnavPoint {
@@ -66,24 +61,32 @@ struct UnavSourceEntry {
 };
 
 // ----------------------------------------------------------------------------
+// LoadStats — what the v0.9 status file surfaces back to Python.
+// ----------------------------------------------------------------------------
+
+struct LoadStats {
+  std::size_t point_count = 0;
+  std::size_t source_count = 0;
+  std::uint64_t file_size_bytes = 0;
+  double load_seconds = 0.0;
+  std::string sidecar_path;
+  // Coordinate scale factor recorded by the Python writer.
+  double coordinate_scale_factor = 1.0;
+};
+
+// ----------------------------------------------------------------------------
 // UnavPointBuffer — the in-engine container.
 // ----------------------------------------------------------------------------
-//
-// Designed for two use cases:
-//
-//   1. Bulk-load from the binary visible-sector file. The CPU-side
-//      vector lives here; in v0.9 a parallel GPU-uploaded handle
-//      lives in a private member.
-//   2. Query the nearest point to a screen-space click for the
-//      selection bridge that returns a uid_hash.
-//
-// All methods are intentionally cheap stubs in v0.8 so the header
-// can compile against any C++17 host without a real Maxon SDK
-// install.
 
 class UnavPointBuffer {
  public:
-  UnavPointBuffer() = default;
+  // Default safety cap. The Python load request can lower this for
+  // a per-load override; the hard ceiling is enforced regardless
+  // so a malformed (or malicious) file cannot exhaust memory.
+  static constexpr std::size_t kDefaultMaxPoints = 5'000'000;
+
+  UnavPointBuffer();
+  explicit UnavPointBuffer(std::size_t maxPoints);
   ~UnavPointBuffer() = default;
 
   // Disable copy; allow move (the buffer is large in production).
@@ -93,82 +96,77 @@ class UnavPointBuffer {
   UnavPointBuffer& operator=(UnavPointBuffer&&) noexcept = default;
 
   // ------------------------------------------------------------- mutators
-  // Drop every point and source entry. Safe to call multiple times.
   void clear();
-
-  // Reserve capacity for `count` upcoming `addPoint` / `loadFromFile`
-  // calls. A no-op in v0.8; in v0.9 this allocates GPU buffers.
   void reserve(std::size_t count);
-
-  // Append one point. Returns the new total point count. In v0.8
-  // the point lives only in CPU memory; v0.9 also flags the GPU
-  // buffer as dirty so the next draw uploads the delta.
   std::size_t addPoint(const UnavPoint& point);
-
-  // Replace the source-id table. In production the rendering side
-  // never mutates this; the table is a join key for the metadata
-  // sidecar.
   void setSourceTable(std::vector<UnavSourceEntry> sources);
 
-  // Read the binary visible-sector file documented in
-  // `docs/BINARY_VISIBLE_SECTOR_FORMAT.md`. Returns the number of
-  // points loaded on success. Returns 0 and sets `errorOut` on
-  // failure (bad magic / version / CRC). v0.8 returns 0 and notes
-  // "not implemented" in `errorOut` so callers can integrate the
-  // glue without the body landing yet.
+  // Load the binary visible-sector file at `path`. Returns the
+  // number of points loaded on success, 0 on failure (and sets
+  // `errorOut` to a human-readable message). Validates magic,
+  // version, point-count vs file size, footer magic, and CRC32.
+  // The hard cap (`maxPoints()`) clips after parsing — points past
+  // the cap are skipped and recorded in `errorOut` as a warning.
   std::size_t loadFromFile(const std::string& path,
                            std::string* errorOut);
+
+  // Configure the per-load safety cap. Values <= 0 reset to the
+  // default.
+  void setMaxPoints(std::size_t maxPoints);
 
   // ---------------------------------------------------------- accessors
   std::size_t size() const noexcept;
   bool empty() const noexcept { return size() == 0; }
+  std::size_t maxPoints() const noexcept { return maxPoints_; }
 
-  // Read-only view of the contiguous point storage. Returns nullptr
-  // when empty so the caller never dereferences a stale pointer.
   const UnavPoint* data() const noexcept;
-
-  // Read-only view of the source table, in the order it was loaded.
   const std::vector<UnavSourceEntry>& sources() const noexcept;
+  const LoadStats& lastLoadStats() const noexcept { return lastStats_; }
+  const std::string& lastFilePath() const noexcept { return lastPath_; }
 
-  // ------------------------------------------------------- placeholders
-  //
-  // These are the v0.9 hot path. They exist as named symbols today
-  // so the integration plan can compile against them; their bodies
-  // are no-ops that record an "unimplemented" state for the
-  // diagnostic dialog.
-
-  // Push the CPU buffer to the GPU. v0.8 placeholder.
-  bool uploadPlaceholder();
-
-  // Issue a single draw call for the entire buffer. v0.8 placeholder.
-  bool drawPlaceholder();
-
-  // Hit-test: given a world-space ray, return the index of the
-  // closest point within `maxDistance`, or `kInvalidIndex` if no
-  // point is in range. v0.8 placeholder.
-  std::size_t queryNearestPointPlaceholder(double rayOriginX,
-                                           double rayOriginY,
-                                           double rayOriginZ,
-                                           double rayDirX,
-                                           double rayDirY,
-                                           double rayDirZ,
-                                           double maxDistance) const;
-
-  // Sentinel for "no hit". v0.9 swaps this for a Maxon-native
-  // ID type.
+  // ---------------------------------------------------- selection / draw
+  // Sentinel for "no hit" returned by `queryNearestPointToRay`.
   static constexpr std::size_t kInvalidIndex =
       static_cast<std::size_t>(-1);
+
+  // World-space ray-vs-points hit-test. Returns the index of the
+  // point with the smallest perpendicular distance to the ray,
+  // bounded by `maxDistance` in world units. A "ray" that points
+  // along +X picks the closest point under that ray; the selection
+  // bridge in `unav_native_plugin.cpp` casts it from the editor
+  // viewport's mouse position.
+  std::size_t queryNearestPointToRay(double rayOriginX,
+                                     double rayOriginY,
+                                     double rayOriginZ,
+                                     double rayDirX,
+                                     double rayDirY,
+                                     double rayDirZ,
+                                     double maxDistance) const;
+
+  // Convenience: world-space "closest point to a 3D position"
+  // hit-test. Used by tests and by the v0.9 fallback when no
+  // depth-buffer pick is wired yet.
+  std::size_t queryNearestPointToPosition(double x, double y, double z,
+                                          double maxDistance) const;
+
+  // Buffer upload + draw. v0.9 implementation issues per-point
+  // calls inside the plugin's `Draw` callback (see
+  // `unav_native_plugin.cpp`); v0.10+ swaps to a single
+  // `BaseDraw::DrawArray` call. These methods stay declared here
+  // so the plugin shell can compile against a stable surface.
+  bool uploadPlaceholder();
+  bool drawPlaceholder();
 
  private:
   std::vector<UnavPoint> points_;
   std::vector<UnavSourceEntry> sources_;
-
-  // v0.9 will add: GPU buffer handle, dirty flag, upload watermark.
+  std::size_t maxPoints_ = kDefaultMaxPoints;
+  LoadStats lastStats_;
+  std::string lastPath_;
 };
 
 // ----------------------------------------------------------------------------
-// Static assertions that make the v0.8 ↔ v0.9 contract enforceable
-// by the compiler.
+// Static assertions that lock the v0.8↔v0.9 contract at compile time.
 // ----------------------------------------------------------------------------
 
 static_assert(sizeof(UnavPoint) == 52,

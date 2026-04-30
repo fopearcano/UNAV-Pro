@@ -31,10 +31,34 @@ option(UNAV_NATIVE_BUILD "Enable the v0.9 native build (off in v0.8)" OFF)
 
 if(NOT UNAV_NATIVE_BUILD)
   message(STATUS
-    "UNAV native skeleton: build is intentionally disabled in v0.8. "
-    "See native/README.md and docs/V0_8_NATIVE_CPP_FEASIBILITY.md "
-    "for the migration plan; expect this CMakeLists.txt to gain a "
-    "real target in v0.9.")
+    "UNAV native skeleton: full plugin build is disabled (the SDK "
+    "registration glue requires the Maxon SDK). Pass "
+    "-DUNAV_NATIVE_BUILD=ON when configuring against the SDK. "
+    "The pure-stdlib unit-test target below builds independently "
+    "and is enabled by default in v0.9.")
+endif()
+
+# -----------------------------------------------------------------------------
+# Pure-stdlib unit tests for `UnavPointBuffer` + the file bridge.
+# These compile without the Maxon SDK so the v0.9 CI / contributor
+# checkout can exercise the loader, CRC validation, hit-test, and
+# bridge file format the same way the Python tests do.
+# -----------------------------------------------------------------------------
+
+add_executable(test_unav_point_buffer
+  src/unav_point_buffer.cpp
+  src/unav_native_plugin.cpp
+  tests/test_unav_point_buffer.cpp
+)
+target_include_directories(test_unav_point_buffer
+  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_features(test_unav_point_buffer PUBLIC cxx_std_17)
+
+# Re-export it under the conventional `ctest`-friendly target name.
+enable_testing()
+add_test(NAME unav_point_buffer COMMAND test_unav_point_buffer)
+
+if(NOT UNAV_NATIVE_BUILD)
   return()
 endif()
 

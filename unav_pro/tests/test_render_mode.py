@@ -10,10 +10,12 @@ from core.render_mode import (
     DEFAULT_CAPS,
     DEFAULT_RENDER_MODE,
     INSTANCES_SOFT_WARNING,
+    NATIVE_VIEWER_SOFT_WARNING,
     RENDER_MODES,
     RENDER_MODE_DEBUG_OBJECTS,
     RENDER_MODE_INSTANCES,
     RENDER_MODE_LABELS,
+    RENDER_MODE_NATIVE_VIEWER,
     RENDER_MODE_POINT_CLOUD,
     RenderModePolicy,
     cap_for_mode,
@@ -30,11 +32,13 @@ from core.render_mode import (
 # ---------------------------------------------------------------------------
 
 
-def test_render_modes_tuple_contains_three_known_tokens():
+def test_render_modes_tuple_contains_four_known_tokens():
+    """v0.7 shipped three modes; v0.9 adds the Native Point Viewer."""
     assert RENDER_MODE_DEBUG_OBJECTS in RENDER_MODES
     assert RENDER_MODE_INSTANCES in RENDER_MODES
     assert RENDER_MODE_POINT_CLOUD in RENDER_MODES
-    assert len(RENDER_MODES) == 3
+    assert RENDER_MODE_NATIVE_VIEWER in RENDER_MODES
+    assert len(RENDER_MODES) == 4
 
 
 def test_default_mode_is_debug_objects_for_v01_parity():
@@ -68,7 +72,10 @@ def test_caps_are_strictly_increasing_across_modes():
     debug = DEFAULT_CAPS[RENDER_MODE_DEBUG_OBJECTS]
     inst = DEFAULT_CAPS[RENDER_MODE_INSTANCES]
     cloud = DEFAULT_CAPS[RENDER_MODE_POINT_CLOUD]
+    native = DEFAULT_CAPS[RENDER_MODE_NATIVE_VIEWER]
     assert debug < inst < cloud
+    # Native viewer is the new top-end performance budget.
+    assert native >= cloud
 
 
 def test_cap_for_mode_returns_default_for_known_modes():
@@ -87,6 +94,7 @@ def test_debug_objects_soft_warning_is_below_hard_cap():
 def test_soft_warning_for_mode_tracks_mode():
     assert soft_warning_for_mode(RENDER_MODE_DEBUG_OBJECTS) == DEBUG_OBJECTS_SOFT_WARNING
     assert soft_warning_for_mode(RENDER_MODE_INSTANCES) == INSTANCES_SOFT_WARNING
+    assert soft_warning_for_mode(RENDER_MODE_NATIVE_VIEWER) == NATIVE_VIEWER_SOFT_WARNING
     # Point cloud has no soft warning — the cap is the cap.
     assert soft_warning_for_mode(RENDER_MODE_POINT_CLOUD) is None
 

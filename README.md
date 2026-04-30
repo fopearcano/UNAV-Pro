@@ -189,26 +189,30 @@ the dataset registry's `<entry.name>:` namespace layers on top.
 Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
 
-### H. Native bridge (v0.8 spike, v0.9 lands the binary loader)
+### H. Native Point Viewer (v0.9 prototype)
 
-v0.8 is a feasibility spike that ships:
-
-* a documentation pack covering the Maxon SDK plugin types,
-  viewport-drawing research, and the migration plan from
-  Python prototype to native C++ plugin;
-* a placeholder `native/` C++ skeleton (no build wired today);
-* a real Python binary visible-sector exporter
-  (`tools/export_visible_sector_binary.py`) producing the file
-  the future native plugin will read.
+v0.9 closes the v0.8 spike: a real C++ binary loader, a fourth
+render mode ("Native Point Viewer (Experimental)"), and the
+file-based Python ↔ C++ bridge. The dialog gains three buttons
+(Export Visible Sector (Binary), Reload Native Viewer, Toggle
+Native Viewer Mode) plus a live status strip. Stability over
+beauty — drawing is per-point inside the plugin's `Draw`
+callback (slow above ~10 k); v0.10+ swaps in GPU instancing.
 
 ```bash
-# Pack a JSONL visible sector into the v0.8 binary file
+# Pack a navigator-filtered visible sector into the v0.8 binary
+# format the v0.9 native plugin reads.
 python tools/export_visible_sector_binary.py \
-    --input  data/catalogs/gaia_pleiades_sample.jsonl \
-    --output cache/binary/gaia_pleiades.unav
+    --dataset cache/gaia_pleiades \
+    --navigator-state navigator.json \
+    --output ~/.unav_pro/native_bridge/visible_sector.bin
 ```
 
 Walkthroughs:
+[`docs/V0_9_NATIVE_VIEWER_PROTOTYPE.md`](docs/V0_9_NATIVE_VIEWER_PROTOTYPE.md),
+[`docs/BINARY_BRIDGE_WORKFLOW.md`](docs/BINARY_BRIDGE_WORKFLOW.md),
+[`docs/NATIVE_LIMITATIONS.md`](docs/NATIVE_LIMITATIONS.md).
+The v0.8 feasibility pack remains the design reference:
 [`docs/V0_8_NATIVE_CPP_FEASIBILITY.md`](docs/V0_8_NATIVE_CPP_FEASIBILITY.md),
 [`docs/MAXON_SDK_PLUGIN_TYPES_FOR_UNAV.md`](docs/MAXON_SDK_PLUGIN_TYPES_FOR_UNAV.md),
 [`docs/NATIVE_VIEWPORT_DRAWING_RESEARCH.md`](docs/NATIVE_VIEWPORT_DRAWING_RESEARCH.md),
@@ -428,6 +432,9 @@ the plugin's package layout is documented in [`docs/PLUGIN_STRUCTURE.md`](docs/P
 * [`docs/NATIVE_VIEWPORT_DRAWING_RESEARCH.md`](docs/NATIVE_VIEWPORT_DRAWING_RESEARCH.md) — viewport-draw API research for the v0.9 renderer.
 * [`docs/PYTHON_TO_CPP_MIGRATION_PLAN.md`](docs/PYTHON_TO_CPP_MIGRATION_PLAN.md) — phased migration ledger.
 * [`docs/BINARY_VISIBLE_SECTOR_FORMAT.md`](docs/BINARY_VISIBLE_SECTOR_FORMAT.md) — on-disk format the native plugin reads.
+* [`docs/V0_9_NATIVE_VIEWER_PROTOTYPE.md`](docs/V0_9_NATIVE_VIEWER_PROTOTYPE.md) — v0.9 prototype summary + acceptance criteria.
+* [`docs/BINARY_BRIDGE_WORKFLOW.md`](docs/BINARY_BRIDGE_WORKFLOW.md) — the file-based Python ↔ C++ bridge protocol.
+* [`docs/NATIVE_LIMITATIONS.md`](docs/NATIVE_LIMITATIONS.md) — what the v0.9 prototype deliberately doesn't do.
 
 Per-feature deep docs:
 [`UNAV_PRO_ARCHITECTURE`](docs/UNAV_PRO_ARCHITECTURE.md) ·
@@ -485,30 +492,44 @@ the per-milestone phasing is in
 
 * **v0.7** ships the render-backend layer (Debug Objects /
   Instances / Point Cloud-experimental) with per-mode safety
-  caps and the search-based metadata fallback. **840+ tests
-  pass.**
-* **v0.8** is a feasibility spike for the native plugin: locks
-  the C++ surface, ships the binary visible-sector exporter
-  (Python writer + reader + CLI), and documents the SDK
-  research. No native code is built yet — the `native/`
-  skeleton is placeholder declarations only.
+  caps and the search-based metadata fallback.
+* **v0.8** locks the C++ surface and ships the binary
+  visible-sector exporter (Python writer + reader + CLI) plus
+  the four feasibility / migration docs.
+* **v0.9** closes the bridge: a real C++
+  `UnavPointBuffer::loadFromFile` (validated end-to-end against
+  the Python writer in 10 pure-stdlib C++ tests), a fourth
+  Render Mode ("Native Point Viewer (Experimental)"), the
+  file-based JSON bridge protocol, and three new dialog
+  buttons (Export Visible Sector (Binary), Reload Native
+  Viewer, Toggle Native Viewer Mode). **874 Python tests pass.**
 
-### Current Python limitations
+### Current limitations
 
-The v0.7 prototype's hard caps are `10 000` (Debug Objects),
-`200 000` (Instances), and `1 000 000` (Point Cloud,
-experimental). Beyond those, the C4D Object Manager and the
-GIL-bound per-row allocation become the bottleneck. Auto Sync
-is still a placeholder checkbox; real-time per-frame re-sync
-needs the v0.11+ GPU-compute filter.
+* **Drawing is per-point.** The v0.9 plugin issues
+  `BaseDraw::DrawPoint` per visible point inside the C4D draw
+  callback. Workable up to ~10 k points; faster paths land
+  in v0.10+.
+* **No GPU buffer / instancing.** Reserved for v0.10's
+  `BaseDraw::DrawArrayWithVertexBuffer` work.
+* **No depth-buffer pick.** The bridge protocol carries
+  selection results, but the click → uid_hash path on the C4D
+  side requires v0.10's `BaseDraw::PickObject` integration;
+  v0.9 falls back to the v0.6 search panel for inspection.
+* **Auto Sync still manual.** The reload happens via the
+  "UNAV Reload Native Viewer" command (or the dialog's button)
+  — v0.10's SceneHook will poll the request file
+  automatically.
+* **Plugin IDs are placeholders.** Real PluginCafe IDs
+  arrive when the v0.10 build harness ships.
 
 ### Next step
 
-* **v0.9** — implement `UnavPointBuffer::loadFromFile` against
-  the v0.8 binary format, register the `UnavStarfield`
-  ObjectData class, draw the buffer in a single
-  `BaseDraw::DrawArray` call, and add an "engine: native"
-  status line to the Diagnostics dialog. The dialog gains a
-  fourth Render Mode — **Native (read-only)** — that consumes
-  the v0.8 binary file. The Python prototype keeps running as
-  the always-available fallback.
+* **v0.10** — wire the v0.9 prototype into a
+  GPU-resident buffer via Maxon's
+  `BaseDraw::DrawArrayWithVertexBuffer`, add the SceneHook
+  that polls the request file per redraw, and implement the
+  `BaseDraw::PickObject` selection bridge so a viewport click
+  resolves to a uid via the metadata sidecar. Per-frame Auto
+  Sync, the GPU compute filter, and the real-time sector
+  streaming layer come in v0.11+.

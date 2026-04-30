@@ -1,63 +1,98 @@
 // SPDX-License-Identifier: MIT
 //
-// UNAV Pro — Native plugin entry-point declarations (v0.8 spike).
+// UNAV Pro — Native plugin entry-point declarations (v0.9 prototype).
 //
-// This header pins the symbols Maxon's plugin loader will call when
-// the v0.9 build harness ships. v0.8 keeps every function as a
-// declaration with a stub body in `unav_native_plugin.cpp` so the
-// rest of the project can compile against the surface.
+// Pins the surface the v0.9 implementation exposes to:
 //
-// The actual Maxon SDK types (`PluginMessage`, `BaseSceneHook`,
-// `BaseObject`, …) are NOT included here so this header stays
-// build-tool-agnostic in v0.8. v0.9 swaps the placeholder typedefs
-// below for real `#include "c4d.h"` and friends.
+//   - Cinema 4D (via the standard `PluginStart` / `PluginEnd` /
+//     `PluginMessage` entry points wrapped by the Maxon SDK), and
+//   - the Python plugin (via the file-based bridge documented in
+//     `docs/BINARY_BRIDGE_WORKFLOW.md`).
+//
+// The Maxon SDK headers (`c4d.h` etc.) are only included when
+// `UNAV_USE_MAXON_SDK` is defined; the build harness sets it
+// automatically when CMake locates the SDK. Without the SDK, the
+// types here remain valid C++17 declarations so the buffer module
+// and the bridge logic compile and unit-test cleanly.
 
 #pragma once
 
 #include <cstdint>
 #include <string>
 
+#include "unav_point_buffer.h"
+
 namespace unav {
 
 // Placeholder ID type. Maxon's SDK uses `Int32` plus a stable
 // per-plugin random ID assigned via the PluginCafe registration
-// portal; v0.9 replaces this typedef.
+// portal. v0.9 keeps placeholder IDs; v0.10 replaces them with
+// PluginCafe-issued ones.
 using PluginId = std::int32_t;
 
-// Stable plugin IDs are *registered* with Maxon, never invented.
-// The constants below are placeholders the v0.9 implementer will
-// replace with PluginCafe-issued IDs.
 constexpr PluginId kPluginIdUnavStarfield     = 1000001;
 constexpr PluginId kPluginIdUnavSceneHook     = 1000002;
 constexpr PluginId kPluginIdUnavCommandEngine = 1000003;
 
 // ----------------------------------------------------------------------------
+// EngineStatus mirrors core.native_bridge.NativeStatus.
+// ----------------------------------------------------------------------------
+
+struct EngineStatus {
+  bool engine_available;
+  std::string engine_version;
+  std::string description;
+  // Last load mirror.
+  std::string last_request_id;
+  std::string binary_path;
+  std::size_t point_count = 0;
+  std::uint64_t file_size_bytes = 0;
+  double load_seconds = 0.0;
+  std::string error;
+};
+
+// ----------------------------------------------------------------------------
 // Plugin lifecycle (Maxon SDK contract).
 // ----------------------------------------------------------------------------
-//
-// Maxon hosts call these symbols when loading / unloading a
-// plugin. v0.8: stubs that log "not implemented" and return false
-// so the host bails out cleanly without registering anything.
 
 bool PluginStart();
 void PluginEnd();
 bool PluginMessage(int message, void* data);
 
 // ----------------------------------------------------------------------------
-// Engine availability (mirrored on the Python side).
+// File-based bridge entry points.
 // ----------------------------------------------------------------------------
 //
-// The Python diagnostics dialog asks the native side "are you
-// alive?" via a small extern "C" entry point that the eventual
-// pybind11 / extension module will expose. v0.8 declares the
-// shape here; the actual export comes in v0.9.
+// These are usable from a plain C++ host (the v0.9 unit tests
+// exercise `LoadFromRequestFile` and `WriteStatusFile` directly
+// without the SDK). Inside the Cinema 4D plugin they are
+// invoked from `PluginMessage(MSG_UPDATE)` and from the
+// "Reload Native Viewer" command.
 
-struct EngineStatus {
-  bool available;          // true iff the native renderer is loaded
-  std::string version;     // human-readable version, e.g. "0.9.0"
-  std::string description; // free-form (e.g. "GPU draw active")
-};
+// Read the JSON request file at `requestPath`, load the binary
+// file it points at into `buffer`, and write the result to the
+// status file at `statusPath`. Returns the number of points the
+// buffer holds after the load (0 on parse error / cleared
+// requests). All errors land in the status file's `error` field
+// for Python to surface.
+std::size_t LoadFromRequestFile(UnavPointBuffer& buffer,
+                                const std::string& requestPath,
+                                const std::string& statusPath);
 
+// Write a status payload back to the bridge directory. Used by
+// the load path above and by the plugin shutdown to record an
+// "engine: gone" final state.
+bool WriteStatusFile(const EngineStatus& status,
+                     const std::string& statusPath);
+
+// Write a selection (uid_hash + position) back to the bridge.
+bool WriteSelectionFile(std::uint64_t uidHash,
+                        std::size_t pointIndex,
+                        double x, double y, double z,
+                        std::uint32_t sourceId,
+                        const std::string& selectionPath);
+
+// Build the EngineStatus the v0.9 diagnostic command returns.
 EngineStatus QueryEngineStatus();
 
 }  // namespace unav
