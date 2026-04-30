@@ -277,8 +277,8 @@ def test_inspector_displays_redshift_and_survey_fields_for_desi():
     text = result.display_text
     assert "Redshift z" in text
     assert "1.500000" in text
-    # Survey / Class section appears with DESI fields.
-    assert "Survey / Class" in text
+    # Catalog Notes section appears with DESI fields.
+    assert "Catalog Notes" in text
     assert "Spec type      : QSO" in text
     assert "Survey         : sv1" in text
     assert "Program        : dark" in text
@@ -295,7 +295,7 @@ def test_inspector_displays_proxy_distance_warning_for_sdss_galaxy():
     # The astrometry section flags the distance as APPROXIMATE.
     assert "APPROXIMATE" in text
     assert "Hubble" in text or "approximate" in text.lower()
-    # Survey / Class section shows SDSS spec class.
+    # Catalog Notes section shows SDSS spec class.
     assert "Spec class     : GALAXY" in text
     assert "Spec subclass  : STARBURST" in text
     assert "Release        : sdss_dr18" in text

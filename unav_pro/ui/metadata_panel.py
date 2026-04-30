@@ -48,6 +48,12 @@ from data.connectors.redshift_distance import (
     DISTANCE_PROXY_WARNING_TEXT,
 )
 from data.schema import CatalogObject
+from knowledge import (
+    classify_object,
+    distance_quality,
+    motion_summary,
+    summarize_object,
+)
 
 _log = get_logger("ui.metadata_panel")
 
@@ -188,115 +194,150 @@ def _format_display_text(result: InspectionResult) -> str:
     lines.append(f"Selection      : {name}")
     if result.status == STATUS_FOUND_MARKER_ONLY:
         lines.append("(catalog lookup miss — showing marker data only)")
+
+    if obj is None:
+        lines.extend(_format_marker_only_sections(marker))
+        return "\n".join(lines)
+
+    parsed_meta = _safe_parse_meta(obj.metadata_json)
+    classification = classify_object(obj)
+
+    # ---- Basic Identity --------------------------------------------
     lines.append("")
+    lines.append("--- Basic Identity ---")
+    lines.append(f"Class          : {classification.object_class} "
+                 f"(confidence: {classification.confidence})")
+    if classification.reason:
+        lines.append(f"Why            : {classification.reason}")
+    lines.append(f"UID            : {obj.uid}")
+    lines.append(f"Catalog source : {obj.catalog_source}")
+    lines.append(f"Object type    : {obj.object_type}")
+    if obj.name:
+        lines.append(f"Name           : {obj.name}")
+    if obj.common_name and obj.common_name != obj.name:
+        lines.append(f"Common name    : {obj.common_name}")
 
-    # --- Identity ----------------------------------------------------
-    lines.append("--- Identity ---")
-    if obj is not None:
-        lines.append(f"UID            : {obj.uid}")
-        lines.append(f"Catalog source : {obj.catalog_source}")
-        lines.append(f"Object type    : {obj.object_type}")
-        if obj.name:
-            lines.append(f"Name           : {obj.name}")
-        if obj.common_name and obj.common_name != obj.name:
-            lines.append(f"Common name    : {obj.common_name}")
-    else:
-        lines.append(f"UID            : {marker.get(MARKER_KEY_UID, '?')}")
-        lines.append(f"Catalog source : {marker.get(MARKER_KEY_CATALOG_SOURCE, '?')}")
-        lines.append(f"Object type    : {marker.get(MARKER_KEY_OBJECT_TYPE, '?')}")
-        if marker.get(MARKER_KEY_NAME):
-            lines.append(f"Name           : {marker[MARKER_KEY_NAME]}")
-
-    # --- Astrometry --------------------------------------------------
+    # ---- Position --------------------------------------------------
     lines.append("")
-    lines.append("--- Astrometry ---")
-    parsed_meta = _safe_parse_meta(obj.metadata_json) if obj is not None else {}
-    if obj is not None:
-        lines.append(f"RA  (deg)      : {obj.ra_deg:.6f}")
-        lines.append(f"Dec (deg)      : {obj.dec_deg:.6f}")
-        for label, value, fmt in (
-            ("Distance (pc)  ", obj.distance_parsec, "{:.4g}"),
-            ("Parallax (mas) ", obj.parallax_mas, "{:.4g}"),
-            ("Redshift z     ", obj.redshift, "{:.6f}"),
-            ("RV (km/s)      ", obj.radial_velocity_kms, "{:.4g}"),
-        ):
-            shown = _fmt_optional_float(value, fmt)
-            if shown is not None:
-                lines.append(f"{label}: {shown}")
-        if parsed_meta.get("distance_method") == DISTANCE_METHOD_REDSHIFT_PROXY:
-            lines.append(
-                "Distance note  : APPROXIMATE — "
-                + DISTANCE_PROXY_WARNING_TEXT
-            )
-        if obj.proper_motion_ra is not None or obj.proper_motion_dec is not None:
-            pm_ra = obj.proper_motion_ra if obj.proper_motion_ra is not None else 0.0
-            pm_dec = obj.proper_motion_dec if obj.proper_motion_dec is not None else 0.0
-            lines.append(f"PM (mas/yr)    : RA {pm_ra:+.3f}, Dec {pm_dec:+.3f}")
+    lines.append("--- Position ---")
+    lines.append(f"RA  (deg)      : {obj.ra_deg:.6f}")
+    lines.append(f"Dec (deg)      : {obj.dec_deg:.6f}")
+    if obj.distance_parsec is not None:
+        lines.append(
+            f"Distance (pc)  : {float(obj.distance_parsec):.4g}"
+        )
+    if obj.parallax_mas is not None:
+        lines.append(
+            f"Parallax (mas) : {float(obj.parallax_mas):.4g}"
+        )
+    state_kind = parsed_meta.get("state_kind")
+    if state_kind:
+        lines.append(f"Position basis : {state_kind}")
+    elif classification.object_class in {
+        "planet", "moon", "asteroid", "comet", "spacecraft",
+    }:
+        lines.append("Position basis : ephemeris (epoch-dependent)")
+    elif obj.proper_motion_ra is not None or obj.proper_motion_dec is not None:
+        lines.append("Position basis : proper-motion-aware")
     else:
-        ra = _fmt_optional_float(marker.get(MARKER_KEY_RA_DEG), "{:.6f}")
-        dec = _fmt_optional_float(marker.get(MARKER_KEY_DEC_DEG), "{:.6f}")
-        d = _fmt_optional_float(marker.get(MARKER_KEY_DISTANCE_PC), "{:.4g}")
-        if ra is not None:
-            lines.append(f"RA  (deg)      : {ra}")
-        if dec is not None:
-            lines.append(f"Dec (deg)      : {dec}")
-        # The marker stores 0.0 as the sentinel for "no distance"; show
-        # only when it is meaningful.
-        if d is not None and float(marker.get(MARKER_KEY_DISTANCE_PC, 0.0)) > 0:
-            lines.append(f"Distance (pc)  : {d}")
+        lines.append("Position basis : static")
+    dq_label, dq_note = distance_quality(
+        distance_parsec=obj.distance_parsec,
+        parallax_mas=obj.parallax_mas,
+        distance_method=parsed_meta.get("distance_method"),
+        parallax_error_mas=parsed_meta.get("parallax_error_mas"),
+    )
+    lines.append(f"Distance type  : {dq_label}")
+    lines.append(f"Distance note  : {dq_note}")
+    if parsed_meta.get("distance_method") == DISTANCE_METHOD_REDSHIFT_PROXY:
+        lines.append(
+            "Reliability    : APPROXIMATE — "
+            + DISTANCE_PROXY_WARNING_TEXT
+        )
 
-    # --- Photometry --------------------------------------------------
-    if obj is not None and any((
-        obj.apparent_magnitude is not None,
-        obj.absolute_magnitude is not None,
-        obj.color_index is not None,
-        obj.spectral_type,
-    )):
+    # ---- Motion ----------------------------------------------------
+    motion_lines: List[str] = []
+    if obj.proper_motion_ra is not None or obj.proper_motion_dec is not None:
+        pm_ra = obj.proper_motion_ra if obj.proper_motion_ra is not None else 0.0
+        pm_dec = obj.proper_motion_dec if obj.proper_motion_dec is not None else 0.0
+        motion_lines.append(f"PM (mas/yr)    : RA {pm_ra:+.3f}, Dec {pm_dec:+.3f}")
+        drift = motion_summary(obj.proper_motion_ra, obj.proper_motion_dec)
+        if drift:
+            motion_lines.append(f"Drift          : {drift}")
+    if obj.radial_velocity_kms is not None:
+        rv = float(obj.radial_velocity_kms)
+        verb = "receding" if rv > 0 else "approaching"
+        motion_lines.append(f"RV (km/s)      : {rv:+.4g} ({verb})")
+    if motion_lines:
+        lines.append("")
+        lines.append("--- Motion ---")
+        lines.extend(motion_lines)
+
+    # ---- Photometry ------------------------------------------------
+    photometry_lines: List[str] = []
+    for label, value, fmt in (
+        ("Apparent mag   ", obj.apparent_magnitude, "{:.3f}"),
+        ("Absolute mag   ", obj.absolute_magnitude, "{:.3f}"),
+        ("Color index    ", obj.color_index, "{:+.3f}"),
+    ):
+        shown = _fmt_optional_float(value, fmt)
+        if shown is not None:
+            photometry_lines.append(f"{label}: {shown}")
+    if obj.spectral_type:
+        photometry_lines.append(f"Spectral type  : {obj.spectral_type}")
+    if photometry_lines:
         lines.append("")
         lines.append("--- Photometry ---")
-        for label, value, fmt in (
-            ("Apparent mag   ", obj.apparent_magnitude, "{:.3f}"),
-            ("Absolute mag   ", obj.absolute_magnitude, "{:.3f}"),
-            ("Color index    ", obj.color_index, "{:+.3f}"),
-        ):
-            shown = _fmt_optional_float(value, fmt)
-            if shown is not None:
-                lines.append(f"{label}: {shown}")
-        if obj.spectral_type:
-            lines.append(f"Spectral type  : {obj.spectral_type}")
+        lines.extend(photometry_lines)
 
-    # --- Survey / class (extragalactic catalogs) --------------------
-    if obj is not None and parsed_meta:
-        survey_lines: List[str] = []
-        # SDSS spec class / subclass.
-        spec_class = parsed_meta.get("spec_class")
-        spec_subclass = parsed_meta.get("spec_subclass")
-        # DESI spectype / subtype.
-        spectype = parsed_meta.get("spectype")
-        subtype = parsed_meta.get("subtype")
-        survey = parsed_meta.get("survey")
-        program = parsed_meta.get("program")
-        release = parsed_meta.get("release")
-        if spec_class:
-            survey_lines.append(f"Spec class     : {spec_class}")
-        if spec_subclass:
-            survey_lines.append(f"Spec subclass  : {spec_subclass}")
-        if spectype:
-            survey_lines.append(f"Spec type      : {spectype}")
-        if subtype:
-            survey_lines.append(f"Spec subtype   : {subtype}")
-        if survey:
-            survey_lines.append(f"Survey         : {survey}")
-        if program:
-            survey_lines.append(f"Program        : {program}")
-        if release:
-            survey_lines.append(f"Release        : {release}")
-        if survey_lines:
-            lines.append("")
-            lines.append("--- Survey / Class ---")
-            lines.extend(survey_lines)
+    # ---- Redshift / Cosmology --------------------------------------
+    if obj.redshift is not None:
+        lines.append("")
+        lines.append("--- Redshift / Cosmology ---")
+        lines.append(f"Redshift z     : {float(obj.redshift):.6f}")
+        zerr = parsed_meta.get("zerr") or parsed_meta.get("spec_zerr")
+        if zerr is not None:
+            try:
+                lines.append(f"z error        : {float(zerr):.6g}")
+            except (TypeError, ValueError):
+                pass
+        if parsed_meta.get("distance_method") == DISTANCE_METHOD_REDSHIFT_PROXY:
+            lines.append(
+                "Distance from z: Hubble-law proxy — order-of-magnitude only."
+            )
 
-    # --- Raw metadata JSON preview ----------------------------------
+    # ---- Catalog Notes (survey / class metadata) -------------------
+    catalog_notes = _collect_catalog_notes(parsed_meta)
+    if catalog_notes:
+        lines.append("")
+        lines.append("--- Catalog Notes ---")
+        lines.extend(catalog_notes)
+
+    # ---- Plain-language Summary ------------------------------------
+    summary = summarize_object(obj)
+    summary_text = summary.as_text()
+    if summary_text:
+        lines.append("")
+        lines.append("--- Plain-language Summary ---")
+        lines.append(summary_text)
+
+    # ---- Missing Data ----------------------------------------------
+    if summary.missing_fields:
+        lines.append("")
+        lines.append("--- Missing Data ---")
+        lines.append("Fields not reported by the source catalog:")
+        for field_label in sorted(summary.missing_fields):
+            lines.append(f"  - {field_label}")
+
+    # ---- Available actions -----------------------------------------
+    actions = _available_actions(obj, classification)
+    if actions:
+        lines.append("")
+        lines.append("--- Available Actions ---")
+        for action in actions:
+            lines.append(f"  - {action}")
+
+    # ---- Raw metadata JSON preview ---------------------------------
     raw = _format_clipboard_json(result)
     if raw:
         lines.append("")
@@ -309,6 +350,87 @@ def _format_display_text(result: InspectionResult) -> str:
             lines.append(raw)
 
     return "\n".join(lines)
+
+
+def _format_marker_only_sections(marker: Dict[int, Any]) -> List[str]:
+    """Marker-only fallback: the catalog lookup missed so we only
+    have the per-object BaseContainer fields. Knowledge layer is
+    skipped (it needs the full ``CatalogObject``)."""
+    lines: List[str] = []
+    lines.append("")
+    lines.append("--- Basic Identity ---")
+    lines.append(f"UID            : {marker.get(MARKER_KEY_UID, '?')}")
+    lines.append(f"Catalog source : {marker.get(MARKER_KEY_CATALOG_SOURCE, '?')}")
+    lines.append(f"Object type    : {marker.get(MARKER_KEY_OBJECT_TYPE, '?')}")
+    if marker.get(MARKER_KEY_NAME):
+        lines.append(f"Name           : {marker[MARKER_KEY_NAME]}")
+
+    lines.append("")
+    lines.append("--- Position ---")
+    ra = _fmt_optional_float(marker.get(MARKER_KEY_RA_DEG), "{:.6f}")
+    dec = _fmt_optional_float(marker.get(MARKER_KEY_DEC_DEG), "{:.6f}")
+    d = _fmt_optional_float(marker.get(MARKER_KEY_DISTANCE_PC), "{:.4g}")
+    if ra is not None:
+        lines.append(f"RA  (deg)      : {ra}")
+    if dec is not None:
+        lines.append(f"Dec (deg)      : {dec}")
+    if d is not None and float(marker.get(MARKER_KEY_DISTANCE_PC, 0.0)) > 0:
+        lines.append(f"Distance (pc)  : {d}")
+    return lines
+
+
+def _collect_catalog_notes(parsed_meta: Dict[str, Any]) -> List[str]:
+    """Survey-specific tags pulled out of metadata_json. The
+    inspector renders them under the Catalog Notes heading."""
+    out: List[str] = []
+    survey_keys = (
+        ("Spec class     ", "spec_class"),
+        ("Spec subclass  ", "spec_subclass"),
+        ("Spec type      ", "spectype"),
+        ("Spec subtype   ", "subtype"),
+        ("Survey         ", "survey"),
+        ("Program        ", "program"),
+        ("Release        ", "release"),
+    )
+    for label, key in survey_keys:
+        value = parsed_meta.get(key)
+        if value:
+            out.append(f"{label}: {value}")
+    epoch = parsed_meta.get("epoch")
+    if epoch:
+        out.append(f"Epoch          : {epoch}")
+    center = parsed_meta.get("center")
+    if center:
+        out.append(f"Observed from  : {center}")
+    return out
+
+
+def _available_actions(
+    obj: CatalogObject, classification,
+) -> List[str]:
+    """Contextual navigation cues — what UNAV can do with this
+    object. Plain text the inspector renders; the actual buttons
+    live in the dialog."""
+    actions: List[str] = ["Add to Bookmarks (right panel)"]
+    if obj.distance_parsec is not None and obj.distance_parsec > 0.0:
+        actions.append("Focus Navigator on this object")
+        actions.append("Add as Route Waypoint")
+        actions.append("Lock Target on this object")
+    else:
+        actions.append(
+            "Focus Navigator unavailable — no reliable distance"
+        )
+    if classification.object_class in {
+        "planet", "moon", "asteroid", "comet", "spacecraft",
+    }:
+        actions.append(
+            "Use Time Navigator to step the epoch and watch this body move"
+        )
+    elif obj.proper_motion_ra is not None or obj.proper_motion_dec is not None:
+        actions.append(
+            "Use Time Navigator to propagate this star's position over time"
+        )
+    return actions
 
 
 def _marker_to_named_dict(marker: Dict[int, Any]) -> Dict[str, Any]:

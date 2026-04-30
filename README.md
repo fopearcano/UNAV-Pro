@@ -189,6 +189,38 @@ the dataset registry's `<entry.name>:` namespace layers on top.
 Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
 
+### K. Astrophysical Knowledge Layer (v1.3)
+
+v1.3 makes UNAV *explain* what you're selecting. Click any
+catalog object and the metadata inspector now renders:
+
+* a **classification** (star / galaxy / quasar / planet /
+  moon / asteroid / comet / spacecraft / unknown) with a
+  coarse confidence tag and a one-line reason;
+* a structured set of sections — **Basic Identity**,
+  **Position**, **Motion**, **Photometry**, **Redshift /
+  Cosmology**, **Catalog Notes**, **Plain-language Summary**,
+  **Missing Data**, **Available Actions**;
+* a deterministic plain-text summary that **never invents
+  facts** — missing fields are listed explicitly under
+  "Missing Data".
+
+No external AI, no network calls, no astropy. Pure stdlib.
+Same input → byte-identical output. The summary describes a
+Sun-like star differently from a high-redshift galaxy
+differently from Mars, and surfaces the v1.2 epoch context
+when the row is solar-system.
+
+Walkthroughs:
+[`docs/V1_3_KNOWLEDGE_LAYER.md`](docs/V1_3_KNOWLEDGE_LAYER.md)
+— milestone summary,
+[`docs/ASTROPHYSICAL_FIELD_GLOSSARY.md`](docs/ASTROPHYSICAL_FIELD_GLOSSARY.md)
+— every field name the inspector renders, with definitions,
+[`docs/OBJECT_CLASSIFICATION_RULES.md`](docs/OBJECT_CLASSIFICATION_RULES.md)
+— the deterministic classifier cascade,
+[`docs/METADATA_INTERPRETATION_LIMITS.md`](docs/METADATA_INTERPRETATION_LIMITS.md)
+— what v1.3 will and will not say about an object.
+
 ### J. Time Navigator (v1.2)
 
 v1.2 makes UNAV epoch-aware. Every position carries the time it
@@ -532,6 +564,10 @@ the plugin's package layout is documented in [`docs/PLUGIN_STRUCTURE.md`](docs/P
 * [`docs/EPOCHS_AND_JULIAN_DATES.md`](docs/EPOCHS_AND_JULIAN_DATES.md) — the v1.2 time model (ISO ↔ JD ↔ Jyear, named epochs, ``coerce_epoch``).
 * [`docs/GAIA_PROPER_MOTION_LIMITATIONS.md`](docs/GAIA_PROPER_MOTION_LIMITATIONS.md) — what the linear ICRS propagation does and does not approximate.
 * [`docs/JPL_TIME_SERIES_WORKFLOW.md`](docs/JPL_TIME_SERIES_WORKFLOW.md) — multi-epoch JPL Horizons fetch into the v1.2 ``object_states`` table.
+* [`docs/V1_3_KNOWLEDGE_LAYER.md`](docs/V1_3_KNOWLEDGE_LAYER.md) — v1.3 milestone summary: classifier, summary generator, glossary, upgraded inspector.
+* [`docs/ASTROPHYSICAL_FIELD_GLOSSARY.md`](docs/ASTROPHYSICAL_FIELD_GLOSSARY.md) — definitions of every field the inspector renders.
+* [`docs/OBJECT_CLASSIFICATION_RULES.md`](docs/OBJECT_CLASSIFICATION_RULES.md) — deterministic per-source classifier cascade.
+* [`docs/METADATA_INTERPRETATION_LIMITS.md`](docs/METADATA_INTERPRETATION_LIMITS.md) — what v1.3 will and will not say about a row.
 
 Per-feature deep docs:
 [`UNAV_PRO_ARCHITECTURE`](docs/UNAV_PRO_ARCHITECTURE.md) ·
@@ -618,6 +654,17 @@ the per-milestone phasing is in
   the scene's epoch; the visible-sector binary export gains a
   v3 layout with ``epoch_jd`` + ``state_mode`` in the header.
   **1053 Python tests pass.**
+* **v1.3** adds an astrophysical knowledge layer. A
+  deterministic classifier (`star`/`galaxy`/`quasar`/`planet`/
+  `moon`/`asteroid`/`comet`/`spacecraft`/`unknown`), a plain-
+  text summary generator, a glossary of catalog terms, and
+  physical-interpretation helpers (`spectral_class_hint`,
+  `distance_quality`, `motion_summary`). The metadata
+  inspector renders nine structured sections — Basic Identity,
+  Position, Motion, Photometry, Redshift, Catalog Notes,
+  Summary, Missing Data, Available Actions — and the rules
+  never invent facts: missing fields are listed explicitly.
+  No AI, no network. **1128 Python tests pass.**
 
 ### Current limitations
 
@@ -647,4 +694,5 @@ the per-milestone phasing is in
   polls the request file per redraw for live Auto Sync — which
   also unlocks the per-frame play sweep the v1.2 Time Navigator
   panel has wired but parked. The v1.2 epoch model + DB schema
-  v2 + binary v3 stay unchanged behind the GPU / picking work.
+  v2 + binary v3 + v1.3 knowledge layer stay unchanged behind
+  the GPU / picking work.
