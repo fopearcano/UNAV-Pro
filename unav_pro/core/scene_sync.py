@@ -71,12 +71,20 @@ DEBUG_CONE_NAME = "UNAV_DebugCone"
 
 @dataclass
 class SyncDiff:
-    """Result of a sync pass. Pure data; no c4d types."""
+    """Result of a sync pass. Pure data; no c4d types.
+
+    ``backend_stats`` and ``backend_mode`` are populated by the
+    v0.7 dispatch path (``sync_visible_sector`` on this module) and
+    let the dialog show "mode=instances, build=42 ms, scene≈12 003"
+    without re-querying the backend.
+    """
 
     added_uids: List[str] = field(default_factory=list)
     kept_uids: List[str] = field(default_factory=list)
     removed_uids: List[str] = field(default_factory=list)
     capped_uids: int = 0
+    backend_mode: Optional[str] = None
+    backend_stats: Optional["object"] = None
 
     @property
     def total_visible(self) -> int:
@@ -324,6 +332,8 @@ def sync_visible_sector(
     scale_mode: str = DEFAULT_SCALE_MODE,
     max_visible: Optional[int] = None,
     show_debug_cone: bool = False,
+    render_mode: Optional[str] = None,
+    backend: Optional[object] = None,
 ) -> SyncDiff:
     """Add/keep/remove the visible-sector children to match
     ``objects``.
@@ -333,20 +343,35 @@ def sync_visible_sector(
     dialog or ``mock_actions``) is responsible for filtering against
     the navigator beforehand.
 
+    ``render_mode`` (v0.7) selects which backend materialises the
+    sector. ``None`` keeps the v0.6 behaviour
+    (``debug_objects``-equivalent) so callers that have not been
+    updated yet continue to work. ``backend`` is an explicit backend
+    instance for tests that want to inject a fake — the typical
+    runtime path is to pass ``render_mode`` and let the factory build
+    a fresh backend.
+
     Returns the ``SyncDiff`` summary. The whole pass runs inside an
     undo block so a single Ctrl-Z reverts every add and remove.
     """
     _require_c4d()
     from c4d_objects.navigation_null import find_navigator
-    from c4d_objects.point_cloud_builder import (
-        build_point_object,
-        ensure_starfield_hierarchy,
-    )
+    from c4d_objects.point_cloud_builder import ensure_starfield_hierarchy
 
     _starfield, visible_sector, debug_root = ensure_starfield_hierarchy(
         doc, scale_mode=scale_mode,
     )
 
+    if backend is None:
+        from c4d_objects.render_backend import backend_for_mode
+        from core.render_mode import DEFAULT_RENDER_MODE, validate_mode
+
+        token = validate_mode(render_mode) if render_mode else DEFAULT_RENDER_MODE
+        backend = backend_for_mode(token)
+
+    # Collect what is already in the scene under whichever backend
+    # owns the sector. We use the legacy reader so a backend switch
+    # cleans up the previous backend's children before we rebuild.
     current = _current_visible_objects(visible_sector)
     wanted_uids = [str(o.uid) for o in objects if getattr(o, "uid", None)]
     diff = compute_diff(current.keys(), wanted_uids, max_visible=max_visible)
@@ -358,34 +383,24 @@ def sync_visible_sector(
         )
 
     by_uid = {str(o.uid): o for o in objects if getattr(o, "uid", None)}
+    added_objects = [
+        by_uid[u] for u in diff.added_uids if u in by_uid
+    ]
 
+    backend.update_visible_sector(
+        doc,
+        added=added_objects,
+        removed_uids=diff.removed_uids,
+        kept_uids=diff.kept_uids,
+        encoding=encoding,
+        scale_mode=scale_mode,
+    )
+    diff.backend_mode = getattr(backend, "mode", None)
+    diff.backend_stats = backend.get_stats()
+
+    # Debug cone — request driven, not implicit.
     doc.StartUndo()
     try:
-        # Remove first so we can also reuse uid slots if the same uid
-        # were to be re-added with a different object — extremely rare,
-        # but it makes the diff order-independent.
-        for uid in diff.removed_uids:
-            obj = current.get(uid)
-            if obj is None:
-                continue
-            doc.AddUndo(c4d.UNDOTYPE_DELETE, obj)
-            obj.Remove()
-
-        for uid in diff.added_uids:
-            src = by_uid.get(uid)
-            if src is None:
-                continue
-            try:
-                child = build_point_object(
-                    src, scale_mode=scale_mode, encoding=encoding,
-                )
-            except Exception:  # noqa: BLE001
-                _log.exception("Sync: failed to build %s", uid)
-                continue
-            child.InsertUnder(visible_sector)
-            doc.AddUndo(c4d.UNDOTYPE_NEWOBJ, child)
-
-        # Debug cone — request driven, not implicit.
         if show_debug_cone:
             navigator = find_navigator(doc)
             if navigator is not None:
@@ -397,9 +412,10 @@ def sync_visible_sector(
 
     c4d.EventAdd()
     _log.info(
-        "Sync visible sector: %s (kept=%d, total=%d).",
+        "Sync visible sector: %s (kept=%d, total=%d, mode=%s).",
         diff.short_summary(),
         len(diff.kept_uids),
         diff.total_visible,
+        getattr(backend, "mode", "?"),
     )
     return diff

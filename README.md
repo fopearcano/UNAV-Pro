@@ -189,6 +189,24 @@ the dataset registry's `<entry.name>:` namespace layers on top.
 Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
 
+### G. Render Mode (v0.7) — Debug Objects / Instances / Point Cloud
+
+For larger scenes, switch the Render Mode strip in the dialog
+from **Debug Objects** (one ``c4d.Onull`` per visible row, the
+v0.1 default; cap 10 000) to **Instances** (one shared template
++ one ``c4d.Oinstance`` per row; cap 200 000) or
+**Point Cloud (experimental)** (search-based inspection only;
+cap 1 000 000). Mode switching is a Sync click; per-mode caps
+and soft warnings live in
+``unav_pro/core/render_mode.py``. Full walkthrough in
+[`docs/V0_7_PERFORMANCE_LAYER.md`](docs/V0_7_PERFORMANCE_LAYER.md);
+the backend interface in
+[`docs/RENDER_BACKENDS.md`](docs/RENDER_BACKENDS.md);
+Instance Mode trade-offs in
+[`docs/INSTANCE_MODE_LIMITATIONS.md`](docs/INSTANCE_MODE_LIMITATIONS.md);
+the future GPU path in
+[`docs/FUTURE_GPU_POINT_RENDERER.md`](docs/FUTURE_GPU_POINT_RENDERER.md).
+
 ### F. Navigator UX (v0.6) — search, lock, bookmark, step
 
 Once any dataset is loaded into the C4D plugin, the v0.6 tabs at
@@ -375,6 +393,10 @@ the plugin's package layout is documented in [`docs/PLUGIN_STRUCTURE.md`](docs/P
 * [`docs/SEARCH_AND_TARGET_LOCK.md`](docs/SEARCH_AND_TARGET_LOCK.md) — search semantics + target-lock pose computation.
 * [`docs/BOOKMARKS_SYSTEM.md`](docs/BOOKMARKS_SYSTEM.md) — persistent bookmarks, on-disk format, focus semantics.
 * [`docs/ROUTE_WORKFLOW_V2.md`](docs/ROUTE_WORKFLOW_V2.md) — insert / replace / reorder + per-segment distance table.
+* [`docs/V0_7_PERFORMANCE_LAYER.md`](docs/V0_7_PERFORMANCE_LAYER.md) — v0.7 render-backend layer (Debug Objects / Instances / Point Cloud).
+* [`docs/RENDER_BACKENDS.md`](docs/RENDER_BACKENDS.md) — backend interface contract.
+* [`docs/INSTANCE_MODE_LIMITATIONS.md`](docs/INSTANCE_MODE_LIMITATIONS.md) — what Instance Mode can and cannot do today.
+* [`docs/FUTURE_GPU_POINT_RENDERER.md`](docs/FUTURE_GPU_POINT_RENDERER.md) — the GPU path the Point Cloud backend will become.
 
 Per-feature deep docs:
 [`UNAV_PRO_ARCHITECTURE`](docs/UNAV_PRO_ARCHITECTURE.md) ·

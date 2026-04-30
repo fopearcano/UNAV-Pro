@@ -26,6 +26,24 @@ from .logging_util import get_logger
 
 _log = get_logger("actions")
 
+# v0.7 — last render-backend stats from the most recent
+# ``sync_visible_sector`` call. The dialog's render-stats strip
+# reads this; tests can inspect it directly.
+_LAST_RENDER_STATS = None
+_LAST_RENDER_BACKEND_MODE = None
+
+
+def last_render_stats():
+    """Return the ``BackendStats`` from the most recent
+    ``sync_visible_sector`` call, or ``None`` if none has run yet."""
+    return _LAST_RENDER_STATS
+
+
+def last_render_backend_mode():
+    """Return the render-mode token used by the most recent sync, or
+    ``None``. Useful for the dialog and for v0.7 diagnostics."""
+    return _LAST_RENDER_BACKEND_MODE
+
 
 def _safe(label: str, fn, *args, **kwargs) -> str:
     """Wrap an action body so exceptions never leak into the dialog.
@@ -417,6 +435,7 @@ def sync_visible_sector(
     catalog_path: Optional[str] = None,
     encoding=None,
     show_debug_cone: bool = False,
+    render_mode: Optional[str] = None,
 ) -> str:
     """Update the UNAV_VisibleSector in place — diff-and-update without
     a full clear.
@@ -474,7 +493,11 @@ def sync_visible_sector(
             scale_mode=params.c4d_scale,
             max_visible=params.max_visible_objects,
             show_debug_cone=show_debug_cone,
+            render_mode=render_mode,
         )
+        global _LAST_RENDER_STATS, _LAST_RENDER_BACKEND_MODE
+        _LAST_RENDER_STATS = diff.backend_stats
+        _LAST_RENDER_BACKEND_MODE = diff.backend_mode
         tag = "stream" if used_streaming else "filter"
         return f"{diff.short_summary()}; {tag}: {frag}{warning_suffix}"
 

@@ -68,6 +68,14 @@ _ID_BTN_SAFETY_REFRESH = 8004
 _ID_GROUP_WORKFLOW = 9000
 _ID_WORKFLOW_HINT = 9001
 
+# v0.7 — Render Mode controls (live in their own strip below the
+# Visible Sector group so the selector is reachable without dropping
+# into the Diagnostics tab).
+_ID_GROUP_RENDER = 9100
+_ID_COMBO_RENDER_MODE = 9101
+_ID_RENDER_STATS = 9102
+_RENDER_COMBO_BASE = 9200
+
 # v0.6 — UX layer: search, bookmarks, navigation controller.
 _ID_GROUP_TABS = 10000
 _ID_TAB_SEARCH = 10100
@@ -182,6 +190,27 @@ if _C4D_AVAILABLE:
             self.AddCheckbox(
                 _ID_CHK_DEBUG_CONE, c4d.BFH_LEFT, initw=0, inith=0,
                 name="Show Debug Cone",
+            )
+            self.GroupEnd()
+
+            # Render Mode (v0.7).
+            from core.render_mode import RENDER_MODE_LABELS
+
+            self.GroupBegin(
+                _ID_GROUP_RENDER, c4d.BFH_SCALEFIT, cols=2, rows=2,
+                title="Render Mode",
+            )
+            self.GroupBorderSpace(8, 8, 8, 8)
+            self.AddStaticText(0, c4d.BFH_LEFT, name="Backend")
+            self.AddComboBox(_ID_COMBO_RENDER_MODE, c4d.BFH_SCALEFIT)
+            for i, (label, _token) in enumerate(RENDER_MODE_LABELS):
+                self.AddChild(
+                    _ID_COMBO_RENDER_MODE, _RENDER_COMBO_BASE + i, label,
+                )
+            self.SetInt32(_ID_COMBO_RENDER_MODE, _RENDER_COMBO_BASE)
+            self.AddStaticText(
+                _ID_RENDER_STATS, c4d.BFH_SCALEFIT,
+                name="(no backend stats yet)",
             )
             self.GroupEnd()
 
@@ -484,8 +513,12 @@ if _C4D_AVAILABLE:
                             show_debug_cone=bool(
                                 self.GetBool(_ID_CHK_DEBUG_CONE)
                             ),
+                            render_mode=self._read_render_mode(),
                         )
                     )
+                    self._refresh_render_stats()
+                elif mid == _ID_COMBO_RENDER_MODE:
+                    self._on_render_mode_changed()
                 elif mid == _ID_CHK_AUTO_SYNC:
                     self._append_log(
                         "Auto Sync: not yet implemented; "
@@ -594,12 +627,71 @@ if _C4D_AVAILABLE:
                 return VisualEncodingParams()
 
         def _do_inspect(self) -> None:
-            from ui.metadata_panel import inspect_active_selection
+            from core.render_mode import RENDER_MODE_POINT_CLOUD
+            from ui.metadata_panel import (
+                STATUS_FOUND_FULL,
+                inspect_active_selection,
+                point_cloud_panel_text,
+                point_cloud_search_hint,
+            )
 
             result = inspect_active_selection()
             self._last_inspection = result
+            mode = self._read_render_mode()
+            # Under Point Cloud Mode, per-object selection does not
+            # resolve to a uid: route the artist to the v0.6 Search
+            # tab via the dedicated hint instead of showing a
+            # confused "marker only" panel.
+            if (
+                mode == RENDER_MODE_POINT_CLOUD
+                and result.status != STATUS_FOUND_FULL
+            ):
+                self.SetString(_ID_META_PANEL, point_cloud_panel_text())
+                self._append_log(point_cloud_search_hint())
+                return
             self.SetString(_ID_META_PANEL, result.display_text)
             self._append_log(result.status_line)
+
+        # --- v0.7 Render Mode helpers ---------------------------------
+
+        def _read_render_mode(self) -> str:
+            from core.render_mode import (
+                DEFAULT_RENDER_MODE, RENDER_MODE_LABELS,
+            )
+            try:
+                combo_idx = int(self.GetInt32(_ID_COMBO_RENDER_MODE))
+            except Exception:  # noqa: BLE001
+                return DEFAULT_RENDER_MODE
+            mode_pos = max(0, combo_idx - _RENDER_COMBO_BASE)
+            mode_pos = min(mode_pos, len(RENDER_MODE_LABELS) - 1)
+            return RENDER_MODE_LABELS[mode_pos][1]
+
+        def _refresh_render_stats(self) -> None:
+            """Pull the most recent backend stats off ``mock_actions``
+            (the sync writes them onto the registry's last result)
+            and surface a one-line summary in the Render Mode strip."""
+            try:
+                from core.mock_actions import last_render_stats
+                stats = last_render_stats()
+            except Exception:  # noqa: BLE001
+                stats = None
+            if stats is None:
+                self.SetString(
+                    _ID_RENDER_STATS, "(no backend stats yet)",
+                )
+                return
+            self.SetString(_ID_RENDER_STATS, stats.short_summary())
+
+        def _on_render_mode_changed(self) -> None:
+            from core.render_mode import (
+                capabilities_for, validate_mode,
+            )
+            mode = validate_mode(self._read_render_mode())
+            caps = capabilities_for(mode)
+            self._append_log(
+                f"Render Mode: switched to {caps.name} — "
+                f"{caps.short_summary()}"
+            )
 
         # --- Route panel handlers ----------------------------------
 

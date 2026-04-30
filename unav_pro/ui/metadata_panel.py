@@ -461,3 +461,34 @@ def empty_panel_text() -> str:
 def no_inspection_result() -> InspectionResult:
     """Sentinel result for 'user clicked Copy without inspecting first'."""
     return InspectionResult(status=STATUS_NO_INSPECTION)
+
+
+def point_cloud_search_hint() -> str:
+    """Search-based inspection fallback used when the active render
+    mode is Point Cloud and the click did not resolve to a uid.
+
+    Point Cloud Mode does not create per-object selectable nodes, so
+    the v0.1 Inspect-by-click path returns marker-only or not-UNAV.
+    The dialog appends this hint to the status log so the artist
+    knows to use the v0.6 Search tab to find the object by name /
+    uid / source instead.
+    """
+    return (
+        "Inspect: Point Cloud Mode has no per-object selection. "
+        "Use the Search tab to find the object by name, uid, or "
+        "source, then click Inspect from there."
+    )
+
+
+def point_cloud_panel_text() -> str:
+    """Multi-line panel text for the inspector under Point Cloud
+    mode when the user clicked without resolving a selection."""
+    return (
+        "=== UNAV Object Inspector ===\n"
+        "Selection      : (point-cloud placeholder)\n"
+        "(Point Cloud Mode does not expose per-object selection.)\n"
+        "\n"
+        "Use the Search tab to look up an object by name / uid / "
+        "source / object_type. The full record is still resolvable "
+        "via the active MetadataLookup."
+    )
