@@ -189,6 +189,40 @@ the dataset registry's `<entry.name>:` namespace layers on top.
 Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
 
+### I. SQL-backed query engine (v1.1)
+
+v1.1 turns UNAV from a viewer into a query engine. Catalogs
+land in a SQLite database; the search panel runs SQL with
+typed filters (source / type / magnitude / redshift / distance
+ranges + pagination); the visible-sector pipeline pulls
+candidates via a bbox-prefilter + exact-cone-refine path
+instead of streaming chunked JSONL. JSONL stays first-class —
+the DB is a parallel query backend, not a replacement.
+
+```bash
+# Import a JSONL catalog into the v1.1 SQLite DB.
+python tools/import_catalog_to_db.py \
+    --input data/catalogs/gaia_pleiades.jsonl \
+    --db data/unav.db
+```
+
+Then in C4D: **Dataset Manager… → Add DB-backed Dataset → pick
+``data/unav.db``**. The registry shows ``db`` instead of
+``idx`` for that entry; Sync Visible Sector routes it through
+the SQL spatial-query path; the Search panel surfaces the SQL
+elapsed time on every query.
+
+Walkthroughs:
+[`docs/V1_1_QUERY_ENGINE.md`](docs/V1_1_QUERY_ENGINE.md) —
+milestone summary,
+[`docs/V1_1_DATABASE_BACKEND.md`](docs/V1_1_DATABASE_BACKEND.md)
+— SQLite vs DuckDB,
+[`docs/SQL_SCHEMA.md`](docs/SQL_SCHEMA.md) — schema reference,
+[`docs/SPATIAL_QUERY_STRATEGY.md`](docs/SPATIAL_QUERY_STRATEGY.md)
+— bbox prefilter math,
+[`docs/DB_IMPORT_WORKFLOW.md`](docs/DB_IMPORT_WORKFLOW.md) —
+importer CLI.
+
 ### H. Native Point Viewer (v1.0 stable)
 
 v1.0 turns the v0.9 prototype into a stable production-grade
@@ -454,6 +488,11 @@ the plugin's package layout is documented in [`docs/PLUGIN_STRUCTURE.md`](docs/P
 * [`docs/CAMERA_RELATIVE_RENDERING.md`](docs/CAMERA_RELATIVE_RENDERING.md) — floating-origin pattern at the v2 binary format + renderer level.
 * [`docs/PICKING_SYSTEM.md`](docs/PICKING_SYSTEM.md) — the three-layer picker (brute-force, accel grid, search fallback).
 * [`docs/PERFORMANCE_TARGETS.md`](docs/PERFORMANCE_TARGETS.md) — v1.0 honest-numbers targets + the benchmark CLI.
+* [`docs/V1_1_QUERY_ENGINE.md`](docs/V1_1_QUERY_ENGINE.md) — v1.1 SQL-backed query engine summary + acceptance.
+* [`docs/V1_1_DATABASE_BACKEND.md`](docs/V1_1_DATABASE_BACKEND.md) — SQLite vs DuckDB choice + tuning.
+* [`docs/SQL_SCHEMA.md`](docs/SQL_SCHEMA.md) — schema + indexes reference.
+* [`docs/SPATIAL_QUERY_STRATEGY.md`](docs/SPATIAL_QUERY_STRATEGY.md) — bbox prefilter + exact cone refine.
+* [`docs/DB_IMPORT_WORKFLOW.md`](docs/DB_IMPORT_WORKFLOW.md) — JSONL → SQLite importer CLI.
 
 Per-feature deep docs:
 [`UNAV_PRO_ARCHITECTURE`](docs/UNAV_PRO_ARCHITECTURE.md) ·
@@ -524,31 +563,40 @@ the per-milestone phasing is in
   render config, camera-relative coordinates via the v2
   binary format, accelerated picking with a uniform-grid
   spatial index, and a benchmark CLI for honest performance
-  measurement. **896 Python tests + 30 C++ tests pass.**
+  measurement.
+* **v1.1** turns UNAV into a query engine. Catalogs land in
+  a SQLite DB; the search panel runs typed SQL filters with
+  pagination + timing; the visible-sector pipeline pulls from
+  the DB via a bbox-prefilter + exact-cone-refine path; the
+  Native Viewer keeps drawing the same v2 binary file. JSONL
+  remains first-class. **968 Python tests + 30 C++ tests pass.**
 
-### Current limitations (v1.0)
+### Current limitations
 
-* **Per-point draw** still uses `BaseDraw::DrawPoint`. The GPU
-  buffer abstraction is in place; v1.1 swaps the SDK draw call
-  to `DrawArrayWithVertexBuffer` for a ~10× draw speedup at
-  large point counts.
-* **CPU fallback by default.** v1.0's `uploadImpl` returns
-  `false` — the renderer walks the CPU shadow per draw. v1.1
-  flips it to a real GPU upload.
+* **Per-point native draw** still uses `BaseDraw::DrawPoint`.
+  The v1.0 GPU buffer abstraction is in place; the
+  `DrawArrayWithVertexBuffer` swap is the next milestone's
+  work.
+* **CPU fallback by default for the native renderer.**
+  `uploadImpl` returns `false`; the renderer walks the CPU
+  shadow per draw.
 * **No depth-buffer pick yet.** The accelerated picking is
-  CPU-side (uniform grid). v1.1's `BaseDraw::PickObject`
-  integration adds pixel-accurate picking.
+  CPU-side (uniform grid).
 * **Auto Sync still manual.** The Reload Native Viewer button
-  / command is the trigger; v1.2's SceneHook auto-polls.
+  / command is the trigger.
+* **SQL backend is SQLite only.** DuckDB is the documented
+  upgrade path — see
+  [`docs/V1_1_DATABASE_BACKEND.md`](docs/V1_1_DATABASE_BACKEND.md).
 * **Plugin IDs are placeholders.** Real PluginCafe IDs arrive
-  with v1.1's build-harness landing.
+  with the v1.x build-harness landing.
 
 ### Next step
 
-* **v1.1** — `BaseDraw::DrawArrayWithVertexBuffer` swap inside
+* **v1.2** — `BaseDraw::DrawArrayWithVertexBuffer` swap inside
   `SdkRenderer::drawImpl` (and the corresponding `uploadImpl`
   flip), `BaseDraw::PickObject` integration for pixel-accurate
-  selection, and PluginCafe-issued IDs. The buffer / renderer
-  / bridge contract stays unchanged — the swap is a one-file
-  change behind the existing `UnavGpuBuffer` /
-  `UnavRenderer` interfaces.
+  selection, an FTS5-backed name search, and a SceneHook that
+  polls the request file per redraw for live Auto Sync. The
+  v1.1 SQL surface stays unchanged behind the DB-backed
+  search and visible-sector paths; the v1.0 buffer / renderer
+  / bridge contracts stay unchanged behind the native renderer.

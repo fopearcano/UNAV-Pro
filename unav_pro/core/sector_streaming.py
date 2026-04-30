@@ -58,17 +58,26 @@ HARD_FULL_LOAD_CEILING = 5_000_000
 
 @dataclass
 class DatasetStreamResult:
-    """Outcome of streaming one dataset for one navigator pose."""
+    """Outcome of streaming one dataset for one navigator pose.
+
+    v1.1 added ``used_db`` and timing fields so the dialog can
+    distinguish chunk-streamed entries from SQL-backed entries
+    and surface query latency in the status panel.
+    """
 
     name: str
     objects: List[CatalogObject] = field(default_factory=list)
     used_index: bool = False
+    used_db: bool = False
     candidate_cells: Optional[int] = None
     total_cells: Optional[int] = None
     candidate_objects: Optional[int] = None
     fallback_reason: Optional[str] = None
     warning: Optional[str] = None
     error: Optional[str] = None
+    # v1.1 — query timing.
+    bbox_elapsed_ms: Optional[float] = None
+    refine_elapsed_ms: Optional[float] = None
 
     @property
     def kept(self) -> int:
@@ -178,6 +187,33 @@ def stream_sector_for_dataset(
     )
     if sources_filter is not None and not sources_filter:
         sources_filter = None
+
+    # ---- DB-backed path (v1.1) -------------------------------------------
+    if entry.is_db_backed:
+        try:
+            from db.db_manager import DBManager
+            from db.spatial_query import query_cone_for_navigator
+        except ImportError as exc:  # pragma: no cover — defensive
+            out.error = f"db package unavailable: {exc}"
+            _log.exception("Stream %s: db import failed", entry.name)
+            return out
+        try:
+            with DBManager(entry.db_path or "", read_only=True) as db:
+                cone = query_cone_for_navigator(
+                    db, params, origin_pc, forward,
+                )
+        except Exception as exc:  # noqa: BLE001 — boundary
+            out.error = f"db cone query failed: {exc!r}"
+            _log.exception("Stream %s: db query failed", entry.name)
+            return out
+        out.used_db = True
+        out.candidate_objects = cone.candidate_rows
+        out.bbox_elapsed_ms = cone.bbox_elapsed_ms
+        out.refine_elapsed_ms = cone.refine_elapsed_ms
+        for obj in cone.objects:
+            obj.uid = _namespace(entry, obj.uid or "")
+        out.objects = cone.objects
+        return out
 
     index_dir = _entry_index_dir(entry)
 

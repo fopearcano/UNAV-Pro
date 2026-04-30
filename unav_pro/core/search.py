@@ -309,3 +309,108 @@ def render_results(
             line += f"  · matched {r.match_field}"
         lines.append(line)
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# v1.1 — SQL-backed search
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class DBSearchOutcome:
+    """v1.1 SQL-search result bundle for the dialog.
+
+    Mirrors the shape ``ui.search_panel.PanelSearchOutcome`` already
+    consumes, with two additions:
+
+    * ``query_db``  — the typed ``DBSearchQuery`` actually issued.
+    * ``elapsed_ms`` — wall-clock time the SQL query took. The
+      dialog surfaces this in the search panel header.
+    """
+
+    results: List[SearchResult] = field(default_factory=list)
+    query_db: Optional[Any] = None  # actually db.DBSearchQuery
+    elapsed_ms: float = 0.0
+    capped: bool = False
+
+
+def _result_from_query_row(row) -> SearchResult:
+    """Adapt a ``QueryResult`` (or a ``sqlite3.Row``) into a
+    ``SearchResult`` so the dialog renders the SQL hits with the
+    same panel code that handles in-memory hits."""
+    return SearchResult(
+        uid=row.uid if hasattr(row, "uid") else row["uid"],
+        name=getattr(row, "name", None) if hasattr(row, "name")
+              else row["name"],
+        common_name=getattr(row, "common_name", None) if hasattr(row, "common_name")
+                    else row["common_name"],
+        catalog_source=(
+            getattr(row, "source", "") if hasattr(row, "source")
+            else (row["source"] or "")
+        ),
+        object_type=(
+            getattr(row, "object_type", "") if hasattr(row, "object_type")
+            else (row["object_type"] or "")
+        ),
+        ra_deg=getattr(row, "ra_deg", None) if hasattr(row, "ra_deg")
+                else row["ra_deg"],
+        dec_deg=getattr(row, "dec_deg", None) if hasattr(row, "dec_deg")
+                else row["dec_deg"],
+        distance_parsec=getattr(row, "distance_parsec", None) if hasattr(row, "distance_parsec")
+                        else row["distance_parsec"],
+        score=1.0,
+        match_field="db",
+    )
+
+
+def search_db(db_or_path, query) -> DBSearchOutcome:
+    """SQL-backed search. ``db_or_path`` is either a
+    ``DBManager`` instance (the dialog keeps one open) or a
+    filesystem path (tests / one-shot CLI).
+
+    ``query`` is a ``db.DBSearchQuery`` instance — the typed
+    parameters the v1.1 panel speaks.
+
+    Returns a ``DBSearchOutcome`` mirroring the v0.6 panel's
+    rendering contract.
+    """
+    import time as _time
+    from db.db_manager import DBManager
+    from db.query_builder import (
+        DBSearchQuery, build_select_sql, query_result_from_row,
+    )
+
+    if not isinstance(query, DBSearchQuery):
+        raise TypeError(
+            "search_db requires a db.DBSearchQuery; got "
+            f"{type(query).__name__}"
+        )
+
+    sql, params = build_select_sql(query)
+    own_db = False
+    db = db_or_path
+    if isinstance(db_or_path, str):
+        db = DBManager(db_or_path, read_only=True)
+        db.open()
+        own_db = True
+    try:
+        t0 = _time.monotonic()
+        cur = db.execute(sql, params)
+        rows = cur.fetchall()
+        elapsed_ms = (_time.monotonic() - t0) * 1000.0
+        results = [
+            _result_from_query_row(query_result_from_row(r))
+            for r in rows
+        ]
+    finally:
+        if own_db:
+            try:
+                db.close()
+            except Exception:  # noqa: BLE001
+                pass
+    return DBSearchOutcome(
+        results=results,
+        query_db=query,
+        elapsed_ms=elapsed_ms,
+        capped=len(results) >= query.limit,
+    )

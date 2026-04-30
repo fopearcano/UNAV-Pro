@@ -94,21 +94,38 @@ class DatasetStats:
 
 @dataclass
 class DatasetEntry:
-    """One registered catalog file plus its current state."""
+    """One registered catalog plus its current state.
+
+    Two backing storage shapes are supported:
+
+    * **JSONL / CSV file** at ``path`` — the v0.3+ default. A
+      chunked spatial index can be attached at ``index_path`` for
+      sector streaming.
+    * **SQLite database** at ``db_path`` — v1.1. The DB carries
+      every row + lazy metadata; spatial queries use the
+      bbox-prefilter path in ``unav_pro.db.spatial_query``. The
+      ``path`` field stays set (so the registry can present a
+      friendly file-name-based label and so the DB importer can
+      record where the catalog came from), but ``is_db_backed``
+      decides which streaming path is used.
+    """
 
     name: str
     path: str
     enabled: bool = True
     namespace: bool = True
     index_path: Optional[str] = None
+    db_path: Optional[str] = None
     stats: Optional[DatasetStats] = None
     notes: str = ""
 
     def __post_init__(self) -> None:
         if not self.name:
             raise ValueError("dataset name must be non-empty")
-        if not self.path:
-            raise ValueError("dataset path must be non-empty")
+        if not self.path and not self.db_path:
+            raise ValueError(
+                "dataset must have at least one of path / db_path"
+            )
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -117,6 +134,7 @@ class DatasetEntry:
             "enabled": bool(self.enabled),
             "namespace": bool(self.namespace),
             "index_path": self.index_path,
+            "db_path": self.db_path,
             "stats": self.stats.to_dict() if self.stats else None,
             "notes": self.notes,
         }
@@ -134,7 +152,13 @@ class DatasetEntry:
         return bool(self.index_path) and os.path.isdir(self.index_path or "")
 
     @property
+    def is_db_backed(self) -> bool:
+        return bool(self.db_path) and os.path.isfile(self.db_path or "")
+
+    @property
     def file_exists(self) -> bool:
+        if self.is_db_backed:
+            return True
         return bool(self.path) and os.path.isfile(self.path)
 
 
@@ -186,6 +210,49 @@ def _bounding_radius_pc(objects: Sequence[CatalogObject]) -> float:
         if r > radius:
             radius = r
     return radius
+
+
+def scan_db_stats(db_path: str) -> DatasetStats:
+    """Lightweight ``DatasetStats`` derived from a v1.1 SQLite DB.
+
+    Avoids loading every row — uses the DB's own aggregate
+    queries via ``DBManager.stats()`` and computes a bounding
+    radius with a single SQL query (max of
+    ``cartesian_x²+y²+z²``)."""
+    from db.db_manager import DBManager  # local import to avoid cycle
+    radius = 0.0
+    sources: List[str] = []
+    available_fields: List[str] = []
+    object_count = 0
+    with DBManager(db_path, read_only=True) as db:
+        cur = db.execute(
+            "SELECT MAX(cartesian_x*cartesian_x + cartesian_y*cartesian_y "
+            "+ cartesian_z*cartesian_z) FROM objects "
+            "WHERE cartesian_x IS NOT NULL"
+        )
+        row = cur.fetchone()
+        if row is not None and row[0] is not None:
+            radius = math.sqrt(float(row[0]))
+        st = db.stats()
+        sources = list(st.sources)
+        object_count = int(st.row_count)
+    # The DB schema's `objects` columns are the populated-fields
+    # set when the row count is non-zero. Mirror the JSONL scanner's
+    # canonical field list so the dialog renders the same legend.
+    if object_count > 0:
+        available_fields = list((
+            "uid", "catalog_source", "object_type", "ra_deg", "dec_deg",
+            "distance_parsec", "redshift", "apparent_magnitude",
+            "color_index", "name", "common_name",
+            "cartesian_x", "cartesian_y", "cartesian_z",
+        ))
+    return DatasetStats(
+        object_count=object_count,
+        bounding_radius_pc=radius,
+        available_fields=available_fields,
+        sources=sources,
+        last_scanned_iso=time.strftime("%Y-%m-%dT%H:%M:%S"),
+    )
 
 
 def scan_dataset_stats(path: str) -> DatasetStats:
@@ -347,12 +414,61 @@ class DatasetRegistry:
         e.index_path = path
         return True
 
+    def set_db_path(self, name: str, path: Optional[str]) -> bool:
+        """Attach (or detach) a SQLite DB to an existing entry.
+        When set, ``stream_sector_for_dataset`` routes through the
+        v1.1 spatial-query path; the JSONL chunks (if any) become
+        a fallback only."""
+        e = self.find(name)
+        if e is None:
+            return False
+        e.db_path = path
+        return True
+
+    def add_db(
+        self,
+        db_path: str,
+        name: Optional[str] = None,
+        *,
+        enabled: bool = True,
+        namespace: bool = True,
+        scan: bool = True,
+    ) -> DatasetEntry:
+        """Register a DB-backed dataset. The entry's ``path`` is
+        also set to ``db_path`` so the existing per-entry display
+        (file size, missing-file flag) keeps working without a
+        separate code path."""
+        if not name:
+            base = os.path.basename(db_path) or "dataset"
+            name = os.path.splitext(base)[0]
+            taken = set(self.names())
+            stem = name
+            i = 2
+            while name in taken:
+                name = f"{stem}_{i}"
+                i += 1
+        entry = DatasetEntry(
+            name=name, path=db_path, enabled=enabled, namespace=namespace,
+            db_path=db_path,
+        )
+        if scan:
+            try:
+                entry.stats = scan_db_stats(db_path)
+            except Exception as exc:  # noqa: BLE001 — boundary
+                entry.notes = f"db scan failed: {exc}"
+                _log.warning("Could not scan DB %s: %s", db_path, exc)
+        self.add(entry)
+        return entry
+
     def rescan(self, name: str) -> Optional[DatasetEntry]:
         e = self.find(name)
         if e is None:
             return None
         try:
-            e.stats = scan_dataset_stats(e.path)
+            if e.is_db_backed:
+                e.stats = scan_db_stats(e.db_path or e.path)
+            else:
+                e.stats = scan_dataset_stats(e.path)
             e.notes = ""
         except Exception as exc:  # noqa: BLE001 — boundary
             e.notes = f"scan failed: {exc}"
@@ -487,10 +603,23 @@ def render_registry(reg: DatasetRegistry) -> str:
                  f"{len(reg.enabled_entries())} enabled) ===")
     for i, e in enumerate(reg.entries):
         flags = "ON " if e.enabled else "off"
-        idx = "idx" if e.is_indexed else "-  "
+        # v1.1: ``db`` flag for DB-backed entries; ``idx`` for the
+        # JSONL spatial index (the v0.2 chunked path). Mutually
+        # informative — a DB-backed entry runs through the SQL
+        # spatial-query path and the chunked index becomes a
+        # fallback / inactive.
+        if e.is_db_backed:
+            idx = "db "
+        elif e.is_indexed:
+            idx = "idx"
+        else:
+            idx = "-  "
         miss = "" if e.file_exists else "  [missing file]"
         lines.append(f"  [{i}] {flags} {idx} {e.name}{miss}")
-        lines.append(f"        path : {e.path}")
+        if e.is_db_backed:
+            lines.append(f"        db   : {e.db_path}")
+        else:
+            lines.append(f"        path : {e.path}")
         if e.stats is not None:
             sources = ",".join(e.stats.sources) or "—"
             lines.append(

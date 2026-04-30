@@ -116,3 +116,94 @@ def empty_panel_text() -> str:
         "Type a name, uid, or source above and press Search to find "
         "objects in the active datasets."
     )
+
+
+# ---------------------------------------------------------------------------
+# v1.1 — DB-backed search
+# ---------------------------------------------------------------------------
+
+
+def run_db_search(
+    db_path: str,
+    *,
+    text: str = "",
+    source_filter: Optional[str] = None,
+    object_type_filter: Optional[str] = None,
+    magnitude_min: Optional[float] = None,
+    magnitude_max: Optional[float] = None,
+    redshift_min: Optional[float] = None,
+    redshift_max: Optional[float] = None,
+    distance_min: Optional[float] = None,
+    distance_max: Optional[float] = None,
+    limit: int = DEFAULT_MAX_RESULTS,
+    offset: int = 0,
+) -> PanelSearchOutcome:
+    """Run a SQL-backed search against ``db_path``. Returns the
+    same ``PanelSearchOutcome`` shape ``run_search`` returns so
+    the dialog renders identically — the v1.1 advanced filters
+    live on this entry point only."""
+    from core.search import search_db
+    from db.query_builder import DBSearchQuery
+
+    db_query = DBSearchQuery(
+        text=text,
+        source_filter=source_filter,
+        object_type_filter=object_type_filter,
+        magnitude_min=magnitude_min,
+        magnitude_max=magnitude_max,
+        redshift_min=redshift_min,
+        redshift_max=redshift_max,
+        distance_min=distance_min,
+        distance_max=distance_max,
+        limit=int(limit),
+        offset=int(offset),
+    )
+    db_outcome = search_db(db_path, db_query)
+
+    # Compose a panel rendering. Reuses the in-memory renderer for
+    # a uniform look; appends the v1.1 timing line so the artist
+    # can see the SQL latency.
+    legacy_query = SearchQuery(
+        text=text,
+        catalog_source_filter=source_filter,
+        object_type_filter=object_type_filter,
+        max_results=limit,
+    )
+    panel = render_results(db_outcome.results, legacy_query)
+    panel += f"\n[SQL] {db_outcome.elapsed_ms:.2f} ms"
+    if db_outcome.capped:
+        panel += f"  (capped at {db_query.limit})"
+    if not db_outcome.results:
+        status = (
+            f"DB Search: no matches "
+            f"({db_outcome.elapsed_ms:.1f} ms)."
+        )
+    else:
+        status = (
+            f"DB Search: {len(db_outcome.results)} match(es) "
+            f"in {db_outcome.elapsed_ms:.1f} ms."
+        )
+    return PanelSearchOutcome(
+        query=legacy_query,
+        results=db_outcome.results,
+        panel_text=panel,
+        status_line=status,
+    )
+
+
+def render_db_indicator(
+    *, db_backed_count: int, total_enabled: int,
+) -> str:
+    """Short string the dialog can show next to the dataset list:
+    ``"3 of 5 datasets DB-backed"``. v1.1's hint that some
+    sectors stream via SQL and others through the v0.2 chunks."""
+    if total_enabled == 0:
+        return "(no datasets enabled)"
+    if db_backed_count == 0:
+        return f"{total_enabled} JSONL dataset(s)"
+    if db_backed_count == total_enabled:
+        return f"{total_enabled} DB-backed dataset(s)"
+    return (
+        f"{db_backed_count} of {total_enabled} DB-backed; "
+        f"{total_enabled - db_backed_count} JSONL"
+    )
