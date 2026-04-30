@@ -194,6 +194,46 @@ class Route:
             return self.waypoints.pop(index)
         return None
 
+    def insert_at(self, index: int, waypoint: Waypoint) -> Waypoint:
+        """Insert ``waypoint`` at ``index``. Out-of-range indices are
+        clamped to the valid range (negative → 0, past end → append),
+        so the dialog never has to special-case an "insert at start"
+        or "insert at end" click."""
+        if index < 0:
+            index = 0
+        if index > len(self.waypoints):
+            index = len(self.waypoints)
+        self.waypoints.insert(index, waypoint)
+        return waypoint
+
+    def replace_at(self, index: int, waypoint: Waypoint) -> Optional[Waypoint]:
+        """Swap the waypoint at ``index`` for ``waypoint``. Returns
+        the old waypoint, or ``None`` for an out-of-range index."""
+        if not (0 <= index < len(self.waypoints)):
+            return None
+        old = self.waypoints[index]
+        self.waypoints[index] = waypoint
+        return old
+
+    def move(self, from_index: int, to_index: int) -> bool:
+        """Reorder the waypoint at ``from_index`` to ``to_index``.
+
+        Both indices are clamped to the valid range. Returns True on
+        success, False when the route is empty or ``from_index`` is
+        out of range."""
+        n = len(self.waypoints)
+        if n == 0 or not (0 <= from_index < n):
+            return False
+        if to_index < 0:
+            to_index = 0
+        if to_index >= n:
+            to_index = n - 1
+        if from_index == to_index:
+            return True
+        wp = self.waypoints.pop(from_index)
+        self.waypoints.insert(to_index, wp)
+        return True
+
     def clear(self) -> int:
         n = len(self.waypoints)
         self.waypoints.clear()
@@ -473,4 +513,36 @@ def render_summary(route: Route, summary: RouteSummary) -> str:
         if details:
             line += "  — " + ", ".join(details)
         lines.append(line)
+    return "\n".join(lines)
+
+
+def render_summary_v2(route: Route, summary: RouteSummary) -> str:
+    """v0.6 panel rendering — adds the per-segment distance table to
+    the v0.1 ``render_summary`` output. The header / total block is
+    identical so existing callers see the same first lines."""
+    base = render_summary(route, summary)
+    if summary.waypoint_count == 0 or not summary.segments:
+        return base
+    lines: List[str] = [base, "", "Segments:"]
+    for seg in summary.segments:
+        a_label = (
+            route.waypoints[seg.from_idx].display_label()
+            if 0 <= seg.from_idx < len(route.waypoints) else "?"
+        )
+        b_label = (
+            route.waypoints[seg.to_idx].display_label()
+            if 0 <= seg.to_idx < len(route.waypoints) else "?"
+        )
+        if seg.is_complete:
+            d_c4d_s = _fmt_c4d(seg.distance_c4d or 0.0)
+            d_pc_s = _fmt_pc(seg.distance_pc) if seg.distance_pc is not None else "—"
+            lines.append(
+                f"  [{seg.from_idx}→{seg.to_idx}] "
+                f"{a_label} → {b_label}  ({d_c4d_s} C4D, {d_pc_s})"
+            )
+        else:
+            lines.append(
+                f"  [{seg.from_idx}→{seg.to_idx}] "
+                f"{a_label} → {b_label}  (unresolved — skipped)"
+            )
     return "\n".join(lines)

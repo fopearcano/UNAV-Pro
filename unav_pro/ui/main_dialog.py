@@ -68,6 +68,34 @@ _ID_BTN_SAFETY_REFRESH = 8004
 _ID_GROUP_WORKFLOW = 9000
 _ID_WORKFLOW_HINT = 9001
 
+# v0.6 — UX layer: search, bookmarks, navigation controller.
+_ID_GROUP_TABS = 10000
+_ID_TAB_SEARCH = 10100
+_ID_SEARCH_INPUT = 10101
+_ID_SEARCH_SOURCE = 10102
+_ID_SEARCH_TYPE = 10103
+_ID_BTN_SEARCH_GO = 10104
+_ID_SEARCH_PANEL = 10105
+_ID_SEARCH_INDEX = 10106
+_ID_BTN_SEARCH_FOCUS = 10107
+_ID_BTN_SEARCH_LOCK = 10108
+_ID_BTN_SEARCH_BOOKMARK = 10109
+_ID_TAB_BOOKMARKS = 10200
+_ID_BOOKMARKS_PANEL = 10201
+_ID_BOOKMARKS_INDEX = 10202
+_ID_BTN_BOOKMARK_FOCUS = 10203
+_ID_BTN_BOOKMARK_REMOVE = 10204
+_ID_BTN_BOOKMARK_REFRESH = 10205
+_ID_BTN_BOOKMARK_CAPTURE = 10206
+_ID_TAB_NAVIGATION = 10300
+_ID_NAV_STEP_PC = 10301
+_ID_NAV_ACCEL = 10302
+_ID_BTN_NAV_FORWARD = 10303
+_ID_BTN_NAV_BACKWARD = 10304
+_ID_BTN_NAV_LOCK = 10305
+_ID_BTN_NAV_UNLOCK = 10306
+_ID_NAV_STATUS = 10307
+
 
 if _C4D_AVAILABLE:
 
@@ -226,6 +254,25 @@ if _C4D_AVAILABLE:
                 style=c4d.DR_MULTILINE_READONLY | c4d.DR_MULTILINE_MONOSPACED,
             )
             self.GroupEnd()
+
+            # v0.6 — UX layer tabs: Search / Bookmarks / Navigation.
+            # Lives under the existing controls so the working
+            # sector-streaming flow is unaffected. Other planned tabs
+            # (Dataset / Navigator / Route / Diagnostics) currently
+            # live as their own groups above; a future polish pass
+            # may consolidate every group under TabGroupBegin (see
+            # docs/V0_6_NAVIGATOR_UX.md §4).
+            try:
+                self.TabGroupBegin(
+                    _ID_GROUP_TABS,
+                    c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT,
+                )
+                self._build_search_tab()
+                self._build_bookmarks_tab()
+                self._build_navigation_tab()
+                self.GroupEnd()
+            except Exception:  # noqa: BLE001 — UI boundary
+                _log.exception("v0.6 tab group failed to build")
             return True
 
         # The most recent inspection so "Copy Metadata JSON" has
@@ -237,17 +284,138 @@ if _C4D_AVAILABLE:
         # waypoint list.
         _route = None
 
+        # v0.6 — UX layer state.
+        _search_outcome = None
+        _bookmarks = None
+        _target_lock = None
+        _nav_controller = None
+
+        # ------------------------------------------------- v0.6 tab builders
+
+        def _build_search_tab(self) -> None:
+            self.GroupBegin(
+                _ID_TAB_SEARCH, c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT,
+                cols=1, rows=4, title="Search",
+            )
+            self.GroupBorderSpace(8, 8, 8, 8)
+            # Query row
+            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=4, rows=1)
+            self.AddStaticText(0, c4d.BFH_LEFT, name="Find")
+            self.AddEditText(_ID_SEARCH_INPUT, c4d.BFH_SCALEFIT)
+            self.AddEditText(_ID_SEARCH_SOURCE, c4d.BFH_SCALEFIT)
+            self.AddButton(_ID_BTN_SEARCH_GO, c4d.BFH_RIGHT, name="Search")
+            self.GroupEnd()
+            self.AddMultiLineEditText(
+                _ID_SEARCH_PANEL,
+                c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT,
+                inith=160,
+                style=c4d.DR_MULTILINE_READONLY | c4d.DR_MULTILINE_MONOSPACED,
+            )
+            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=4, rows=1)
+            self.AddStaticText(0, c4d.BFH_LEFT, name="Pick #")
+            self.AddEditNumberArrows(_ID_SEARCH_INDEX, c4d.BFH_SCALEFIT)
+            self.SetInt32(_ID_SEARCH_INDEX, 0, min=0, max=9999, step=1)
+            self.AddButton(_ID_BTN_SEARCH_FOCUS, c4d.BFH_SCALEFIT, name="Focus")
+            self.AddButton(_ID_BTN_SEARCH_LOCK, c4d.BFH_SCALEFIT, name="Lock Target")
+            self.GroupEnd()
+            self.AddButton(
+                _ID_BTN_SEARCH_BOOKMARK, c4d.BFH_SCALEFIT,
+                name="Add Selected Result to Bookmarks",
+            )
+            self.GroupEnd()
+
+        def _build_bookmarks_tab(self) -> None:
+            self.GroupBegin(
+                _ID_TAB_BOOKMARKS, c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT,
+                cols=1, rows=3, title="Bookmarks",
+            )
+            self.GroupBorderSpace(8, 8, 8, 8)
+            self.AddMultiLineEditText(
+                _ID_BOOKMARKS_PANEL,
+                c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT,
+                inith=160,
+                style=c4d.DR_MULTILINE_READONLY | c4d.DR_MULTILINE_MONOSPACED,
+            )
+            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=4, rows=1)
+            self.AddStaticText(0, c4d.BFH_LEFT, name="Pick #")
+            self.AddEditNumberArrows(_ID_BOOKMARKS_INDEX, c4d.BFH_SCALEFIT)
+            self.SetInt32(_ID_BOOKMARKS_INDEX, 0, min=0, max=9999, step=1)
+            self.AddButton(_ID_BTN_BOOKMARK_FOCUS, c4d.BFH_SCALEFIT, name="Focus")
+            self.AddButton(_ID_BTN_BOOKMARK_REMOVE, c4d.BFH_SCALEFIT, name="Remove")
+            self.GroupEnd()
+            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=2, rows=1)
+            self.AddButton(
+                _ID_BTN_BOOKMARK_CAPTURE, c4d.BFH_SCALEFIT,
+                name="Capture Navigator Position",
+            )
+            self.AddButton(
+                _ID_BTN_BOOKMARK_REFRESH, c4d.BFH_SCALEFIT, name="Reload",
+            )
+            self.GroupEnd()
+            self.GroupEnd()
+
+        def _build_navigation_tab(self) -> None:
+            self.GroupBegin(
+                _ID_TAB_NAVIGATION, c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT,
+                cols=1, rows=4, title="Navigation",
+            )
+            self.GroupBorderSpace(8, 8, 8, 8)
+            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=4, rows=1)
+            self.AddStaticText(0, c4d.BFH_LEFT, name="Step (pc)")
+            self.AddEditNumberArrows(_ID_NAV_STEP_PC, c4d.BFH_SCALEFIT)
+            self.SetFloat(_ID_NAV_STEP_PC, 1.0, min=1e-6, max=1e6, step=0.1)
+            self.AddStaticText(0, c4d.BFH_LEFT, name="Acceleration")
+            self.AddEditNumberArrows(_ID_NAV_ACCEL, c4d.BFH_SCALEFIT)
+            self.SetFloat(_ID_NAV_ACCEL, 1.0, min=0.01, max=1000.0, step=0.5)
+            self.GroupEnd()
+            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=4, rows=1)
+            self.AddButton(_ID_BTN_NAV_BACKWARD, c4d.BFH_SCALEFIT, name="Step Backward")
+            self.AddButton(_ID_BTN_NAV_FORWARD, c4d.BFH_SCALEFIT, name="Step Forward")
+            self.AddButton(_ID_BTN_NAV_LOCK, c4d.BFH_SCALEFIT, name="Lock Selected as Target")
+            self.AddButton(_ID_BTN_NAV_UNLOCK, c4d.BFH_SCALEFIT, name="Unlock Target")
+            self.GroupEnd()
+            self.AddStaticText(
+                _ID_NAV_STATUS, c4d.BFH_SCALEFIT,
+                name="(navigation status)",
+            )
+            self.GroupEnd()
+
         def InitValues(self) -> bool:
+            from core.bookmarks import load_bookmarks
+            from core.navigation_controller import NavigationController
             from core.route import Route
+            from ui.bookmarks_panel import empty_panel_text as bm_empty
+            from ui.bookmarks_panel import render as bm_render
             from ui.metadata_panel import empty_panel_text
-            from ui.route_panel import empty_panel_text as rt_empty
+            from ui.search_panel import empty_panel_text as search_empty
 
             self._append_log(f"{self.TITLE} ready.")
             self.SetString(_ID_META_PANEL, empty_panel_text())
             self._route = Route()
+            from ui.route_panel import empty_panel_text as rt_empty
             self.SetString(_ID_RT_PANEL, rt_empty())
             self._refresh_safety_status()
             self._refresh_workflow_hint()
+
+            # v0.6 panel defaults.
+            try:
+                self.SetString(_ID_SEARCH_PANEL, search_empty())
+            except Exception:  # noqa: BLE001
+                pass
+            self._bookmarks = load_bookmarks()
+            try:
+                self.SetString(
+                    _ID_BOOKMARKS_PANEL,
+                    bm_render(self._bookmarks) if len(self._bookmarks)
+                    else bm_empty(),
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            self._nav_controller = NavigationController()
+            try:
+                self.SetString(_ID_NAV_STATUS, "(no target locked)")
+            except Exception:  # noqa: BLE001
+                pass
             return True
 
         def _refresh_workflow_hint(self) -> None:
@@ -358,6 +526,31 @@ if _C4D_AVAILABLE:
                     self._refresh_safety_status()
                 elif mid == _ID_BTN_CLEAR_LOG:
                     self.SetString(_ID_LOG, "")
+                # v0.6 — search / bookmarks / navigation handlers.
+                elif mid == _ID_BTN_SEARCH_GO:
+                    self._do_search()
+                elif mid == _ID_BTN_SEARCH_FOCUS:
+                    self._do_search_focus()
+                elif mid == _ID_BTN_SEARCH_LOCK:
+                    self._do_search_lock()
+                elif mid == _ID_BTN_SEARCH_BOOKMARK:
+                    self._do_search_bookmark()
+                elif mid == _ID_BTN_BOOKMARK_FOCUS:
+                    self._do_bookmark_focus()
+                elif mid == _ID_BTN_BOOKMARK_REMOVE:
+                    self._do_bookmark_remove()
+                elif mid == _ID_BTN_BOOKMARK_REFRESH:
+                    self._do_bookmark_refresh()
+                elif mid == _ID_BTN_BOOKMARK_CAPTURE:
+                    self._do_bookmark_capture()
+                elif mid == _ID_BTN_NAV_FORWARD:
+                    self._do_nav_step(direction=1)
+                elif mid == _ID_BTN_NAV_BACKWARD:
+                    self._do_nav_step(direction=-1)
+                elif mid == _ID_BTN_NAV_LOCK:
+                    self._do_nav_lock()
+                elif mid == _ID_BTN_NAV_UNLOCK:
+                    self._do_nav_unlock()
             except Exception as exc:  # noqa: BLE001 — UI boundary handler
                 _log.exception("Dialog command %s failed", mid)
                 self._append_log(f"ERROR: {exc!r}")
@@ -504,6 +697,325 @@ if _C4D_AVAILABLE:
                 self._append_log("Focus Navigator: no active document.")
                 return
             self._append_log(focus_navigator_on(doc, self._route))
+
+        # --- v0.6 Search / Bookmarks / Navigation -----------------
+
+        def _refresh_bookmarks_panel(self) -> None:
+            from ui.bookmarks_panel import empty_panel_text as bm_empty
+            from ui.bookmarks_panel import render as bm_render
+            try:
+                self.SetString(
+                    _ID_BOOKMARKS_PANEL,
+                    bm_render(self._bookmarks) if len(self._bookmarks)
+                    else bm_empty(),
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+        def _do_search(self) -> None:
+            from ui.search_panel import run_search
+            try:
+                text = self.GetString(_ID_SEARCH_INPUT) or ""
+                source = (self.GetString(_ID_SEARCH_SOURCE) or "").strip() or None
+            except Exception:  # noqa: BLE001
+                text, source = "", None
+            outcome = run_search(text, catalog_source_filter=source)
+            self._search_outcome = outcome
+            try:
+                self.SetString(_ID_SEARCH_PANEL, outcome.panel_text)
+            except Exception:  # noqa: BLE001
+                pass
+            self._append_log(outcome.status_line)
+
+        def _selected_search_result(self):
+            from ui.search_panel import selected_result
+            if self._search_outcome is None:
+                return None
+            try:
+                idx = int(self.GetInt32(_ID_SEARCH_INDEX))
+            except Exception:  # noqa: BLE001
+                idx = 0
+            return selected_result(self._search_outcome, idx)
+
+        def _do_search_focus(self) -> None:
+            from core.target_lock import acquire_target
+            from core.metadata_lookup import default_lookup
+            r = self._selected_search_result()
+            if r is None:
+                self._append_log("Search Focus: pick a result first.")
+                return
+            try:
+                from c4d import documents  # type: ignore
+            except ImportError:
+                self._append_log("Search Focus: Cinema 4D not available.")
+                return
+            doc = documents.GetActiveDocument()
+            if doc is None:
+                self._append_log("Search Focus: no active document.")
+                return
+            from c4d_objects.navigation_null import find_navigator
+            nav = find_navigator(doc)
+            if nav is None:
+                self._append_log("Search Focus: no UNAV_Navigator in scene.")
+                return
+            lock = acquire_target(r.uid, default_lookup())
+            if lock is None or not lock.is_resolved:
+                self._append_log(
+                    f"Search Focus: '{r.display_label()}' not resolvable; "
+                    "load the matching dataset."
+                )
+                return
+            doc.StartUndo()
+            try:
+                doc.AddUndo(c4d.UNDOTYPE_CHANGE, nav)
+                mg = nav.GetMg()
+                mg.off = c4d.Vector(*lock.position_c4d)
+                nav.SetMg(mg)
+            finally:
+                doc.EndUndo()
+            c4d.EventAdd()
+            self._append_log(
+                f"Search Focus: navigator → '{lock.label}'."
+            )
+
+        def _do_search_lock(self) -> None:
+            from core.target_lock import acquire_target
+            from core.metadata_lookup import default_lookup
+            r = self._selected_search_result()
+            if r is None:
+                self._append_log("Lock Target: pick a result first.")
+                return
+            lock = acquire_target(r.uid, default_lookup())
+            if lock is None or not lock.is_resolved:
+                self._append_log(
+                    f"Lock Target: '{r.display_label()}' not resolvable."
+                )
+                return
+            self._target_lock = lock
+            try:
+                self.SetString(
+                    _ID_NAV_STATUS,
+                    f"Locked on '{lock.label}' [{lock.uid}]",
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            self._append_log(f"Lock Target: locked on '{lock.label}'.")
+
+        def _do_search_bookmark(self) -> None:
+            from ui.bookmarks_panel import add_search_result
+            r = self._selected_search_result()
+            if r is None:
+                self._append_log("Bookmark: pick a search result first.")
+                return
+            _ok, status = add_search_result(self._bookmarks, r)
+            self._append_log(status)
+            self._refresh_bookmarks_panel()
+
+        def _selected_bookmark(self):
+            try:
+                idx = int(self.GetInt32(_ID_BOOKMARKS_INDEX))
+            except Exception:  # noqa: BLE001
+                idx = 0
+            if 0 <= idx < len(self._bookmarks):
+                return self._bookmarks.bookmarks[idx]
+            return None
+
+        def _do_bookmark_focus(self) -> None:
+            from ui.bookmarks_panel import focus_pose_for
+            bm = self._selected_bookmark()
+            if bm is None:
+                self._append_log("Bookmark Focus: pick a bookmark first.")
+                return
+            pose = focus_pose_for(bm)
+            self._append_log(pose.status_line)
+            if not pose.is_resolved:
+                return
+            try:
+                from c4d import documents  # type: ignore
+            except ImportError:
+                self._append_log("Bookmark Focus: Cinema 4D not available.")
+                return
+            doc = documents.GetActiveDocument()
+            if doc is None:
+                self._append_log("Bookmark Focus: no active document.")
+                return
+            from c4d_objects.navigation_null import find_navigator
+            nav = find_navigator(doc)
+            if nav is None:
+                self._append_log("Bookmark Focus: no UNAV_Navigator in scene.")
+                return
+            doc.StartUndo()
+            try:
+                doc.AddUndo(c4d.UNDOTYPE_CHANGE, nav)
+                mg = nav.GetMg()
+                mg.off = c4d.Vector(*pose.position_c4d)
+                nav.SetMg(mg)
+            finally:
+                doc.EndUndo()
+            c4d.EventAdd()
+
+        def _do_bookmark_remove(self) -> None:
+            from ui.bookmarks_panel import remove
+            bm = self._selected_bookmark()
+            if bm is None:
+                self._append_log("Bookmark Remove: pick a bookmark first.")
+                return
+            _ok, status = remove(self._bookmarks, bm.id)
+            self._append_log(status)
+            self._refresh_bookmarks_panel()
+
+        def _do_bookmark_refresh(self) -> None:
+            from core.bookmarks import load_bookmarks
+            self._bookmarks = load_bookmarks()
+            self._append_log(
+                f"Bookmarks: reloaded ({len(self._bookmarks)} entries)."
+            )
+            self._refresh_bookmarks_panel()
+
+        def _do_bookmark_capture(self) -> None:
+            try:
+                from c4d import documents  # type: ignore
+            except ImportError:
+                self._append_log("Capture Position: Cinema 4D not available.")
+                return
+            from c4d_objects.navigation_null import find_navigator
+            from ui.bookmarks_panel import add_coordinate
+            doc = documents.GetActiveDocument()
+            if doc is None:
+                self._append_log("Capture Position: no active document.")
+                return
+            nav = find_navigator(doc)
+            if nav is None:
+                self._append_log(
+                    "Capture Position: no UNAV_Navigator in scene."
+                )
+                return
+            off = nav.GetMg().off
+            label = f"Pos {len(self._bookmarks) + 1}"
+            _ok, status = add_coordinate(
+                self._bookmarks,
+                (float(off.x), float(off.y), float(off.z)),
+                label,
+            )
+            self._append_log(status)
+            self._refresh_bookmarks_panel()
+
+        def _read_step_speed(self):
+            from core.navigation_controller import StepSpeed
+            try:
+                step_pc = float(self.GetFloat(_ID_NAV_STEP_PC))
+                accel = float(self.GetFloat(_ID_NAV_ACCEL))
+            except Exception:  # noqa: BLE001
+                return StepSpeed()
+            try:
+                return StepSpeed(step_distance_pc=step_pc, acceleration=accel)
+            except ValueError:
+                return StepSpeed()
+
+        def _do_nav_step(self, direction: int) -> None:
+            from core.navigation_controller import step_position
+            from data.schema import SCALE_MODES
+            try:
+                from c4d import documents  # type: ignore
+            except ImportError:
+                self._append_log("Step: Cinema 4D not available.")
+                return
+            from c4d_objects.navigation_null import find_navigator
+            doc = documents.GetActiveDocument()
+            if doc is None:
+                self._append_log("Step: no active document.")
+                return
+            nav = find_navigator(doc)
+            if nav is None:
+                self._append_log("Step: no UNAV_Navigator in scene.")
+                return
+            speed = self._read_step_speed()
+            self._nav_controller.speed = speed
+            mg = nav.GetMg()
+            # Forward = local -Z transformed by navigator orientation.
+            forward_c4d = (mg.v3 * -1.0)
+            # Convert step from pc → C4D units via the active scale.
+            scale = SCALE_MODES.get("pc", 1.0)
+            current_pc = (
+                float(mg.off.x) / scale,
+                float(mg.off.y) / scale,
+                float(mg.off.z) / scale,
+            )
+            forward = (
+                float(forward_c4d.x), float(forward_c4d.y), float(forward_c4d.z),
+            )
+            new_pc = step_position(current_pc, forward, speed, direction=direction)
+            new_c4d = (
+                new_pc[0] * scale, new_pc[1] * scale, new_pc[2] * scale,
+            )
+            doc.StartUndo()
+            try:
+                doc.AddUndo(c4d.UNDOTYPE_CHANGE, nav)
+                mg.off = c4d.Vector(*new_c4d)
+                nav.SetMg(mg)
+            finally:
+                doc.EndUndo()
+            c4d.EventAdd()
+            tag = "forward" if direction >= 0 else "backward"
+            self._append_log(
+                f"Step {tag}: {speed.effective_step_pc:.3g} pc."
+            )
+            try:
+                self.SetString(
+                    _ID_NAV_STATUS,
+                    f"At ({new_c4d[0]:.3g}, {new_c4d[1]:.3g}, {new_c4d[2]:.3g})",
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+        def _do_nav_lock(self) -> None:
+            from core.target_lock import acquire_target
+            from core.metadata_lookup import default_lookup
+            try:
+                from c4d import documents  # type: ignore
+            except ImportError:
+                self._append_log("Lock: Cinema 4D not available.")
+                return
+            from c4d_objects.point_cloud_builder import (
+                MARKER_KEY_UID, _read_marker,
+            )
+            doc = documents.GetActiveDocument()
+            if doc is None:
+                self._append_log("Lock: no active document.")
+                return
+            sel = doc.GetActiveObject()
+            if sel is None:
+                self._append_log("Lock: nothing selected.")
+                return
+            marker = _read_marker(sel)
+            if marker is None:
+                self._append_log("Lock: selection is not a UNAV object.")
+                return
+            uid = str(marker.get(MARKER_KEY_UID) or "")
+            if not uid:
+                self._append_log("Lock: selected UNAV object carries no uid.")
+                return
+            lock = acquire_target(uid, default_lookup())
+            if lock is None or not lock.is_resolved:
+                self._append_log("Lock: target not resolvable in lookup.")
+                return
+            self._target_lock = lock
+            try:
+                self.SetString(
+                    _ID_NAV_STATUS,
+                    f"Locked on '{lock.label}' [{lock.uid}]",
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            self._append_log(f"Lock: locked on '{lock.label}'.")
+
+        def _do_nav_unlock(self) -> None:
+            self._target_lock = None
+            try:
+                self.SetString(_ID_NAV_STATUS, "(no target locked)")
+            except Exception:  # noqa: BLE001
+                pass
+            self._append_log("Unlock: target cleared.")
 
         # The dataset manager dialog is async and persistent: we
         # keep one instance per session so re-clicking the menu

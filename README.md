@@ -189,6 +189,30 @@ the dataset registry's `<entry.name>:` namespace layers on top.
 Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
 
+### F. Navigator UX (v0.6) — search, lock, bookmark, step
+
+Once any dataset is loaded into the C4D plugin, the v0.6 tabs at
+the bottom of the dialog give you:
+
+* **Search** — type a name / uid / source / object type, get a
+  ranked list across every active dataset, then **Focus** /
+  **Lock Target** / **Add to Bookmarks**.
+* **Bookmarks** — persistent saved anchors at
+  `~/.unav_pro/bookmarks.json`. Add from a search result, capture
+  the navigator's current position, focus / remove / reorder.
+* **Navigation** — step the navigator forward / backward along
+  its heading at a configurable parsec-per-step speed; lock /
+  unlock a target.
+
+Full walkthrough in
+[`docs/V0_6_NAVIGATOR_UX.md`](docs/V0_6_NAVIGATOR_UX.md);
+search + target-lock contracts in
+[`docs/SEARCH_AND_TARGET_LOCK.md`](docs/SEARCH_AND_TARGET_LOCK.md);
+bookmarks format in
+[`docs/BOOKMARKS_SYSTEM.md`](docs/BOOKMARKS_SYSTEM.md);
+route refinements in
+[`docs/ROUTE_WORKFLOW_V2.md`](docs/ROUTE_WORKFLOW_V2.md).
+
 ---
 
 ## Data workflow (real catalogs)
@@ -347,6 +371,10 @@ the plugin's package layout is documented in [`docs/PLUGIN_STRUCTURE.md`](docs/P
 * [`docs/V0_5_SDSS_DESI_WORKFLOW.md`](docs/V0_5_SDSS_DESI_WORKFLOW.md) — v0.5 SDSS / DESI extragalactic import.
 * [`docs/REDSHIFT_DISTANCE_LIMITATIONS.md`](docs/REDSHIFT_DISTANCE_LIMITATIONS.md) — redshift→distance proxy, when it fires, when it refuses.
 * [`docs/EXTRAGALACTIC_VISUAL_ENCODING.md`](docs/EXTRAGALACTIC_VISUAL_ENCODING.md) — redshift colour mode + extragalactic palette.
+* [`docs/V0_6_NAVIGATOR_UX.md`](docs/V0_6_NAVIGATOR_UX.md) — v0.6 navigator UX layer (search, target lock, bookmarks, route refinements, step navigation).
+* [`docs/SEARCH_AND_TARGET_LOCK.md`](docs/SEARCH_AND_TARGET_LOCK.md) — search semantics + target-lock pose computation.
+* [`docs/BOOKMARKS_SYSTEM.md`](docs/BOOKMARKS_SYSTEM.md) — persistent bookmarks, on-disk format, focus semantics.
+* [`docs/ROUTE_WORKFLOW_V2.md`](docs/ROUTE_WORKFLOW_V2.md) — insert / replace / reorder + per-segment distance table.
 
 Per-feature deep docs:
 [`UNAV_PRO_ARCHITECTURE`](docs/UNAV_PRO_ARCHITECTURE.md) ·
