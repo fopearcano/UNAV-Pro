@@ -122,6 +122,31 @@ _ID_BTN_NAV_LOCK = 10305
 _ID_BTN_NAV_UNLOCK = 10306
 _ID_NAV_STATUS = 10307
 
+# v1.4 — Missions tab (guided voyages + playback controls).
+_ID_TAB_MISSIONS = 10400
+_ID_MISSIONS_LIST = 10401
+_ID_MISSIONS_DETAIL = 10402
+_ID_MISSIONS_INDEX = 10403
+_ID_BTN_MISSION_NEW = 10410
+_ID_BTN_MISSION_DELETE = 10411
+_ID_BTN_MISSION_IMPORT = 10412
+_ID_BTN_MISSION_EXPORT = 10413
+_ID_BTN_MISSION_ADD_FROM_SELECTION = 10414
+_ID_BTN_MISSION_ADD_FROM_BOOKMARK = 10415
+_ID_BTN_MISSION_REMOVE_WP = 10416
+_ID_BTN_MISSION_PREVIEW_ROUTE = 10417
+_ID_BTN_PLAYBACK_PLAY = 10420
+_ID_BTN_PLAYBACK_PAUSE = 10421
+_ID_BTN_PLAYBACK_STOP = 10422
+_ID_BTN_PLAYBACK_NEXT = 10423
+_ID_BTN_PLAYBACK_PREV = 10424
+_ID_BTN_PLAYBACK_STEP_FWD = 10425
+_ID_BTN_PLAYBACK_STEP_BACK = 10426
+_ID_PLAYBACK_SPEED = 10430
+_ID_PLAYBACK_STATUS = 10431
+_ID_MISSION_TITLE_INPUT = 10440
+_ID_MISSION_DESC_INPUT = 10441
+
 
 if _C4D_AVAILABLE:
 
@@ -383,6 +408,7 @@ if _C4D_AVAILABLE:
                 self._build_search_tab()
                 self._build_bookmarks_tab()
                 self._build_navigation_tab()
+                self._build_missions_tab()
                 self.GroupEnd()
             except Exception:  # noqa: BLE001 — UI boundary
                 _log.exception("v0.6 tab group failed to build")
@@ -495,6 +521,88 @@ if _C4D_AVAILABLE:
                 _ID_NAV_STATUS, c4d.BFH_SCALEFIT,
                 name="(navigation status)",
             )
+            self.GroupEnd()
+
+        def _build_missions_tab(self) -> None:
+            """v1.4 Missions tab — guided voyage list + playback controls."""
+            self.GroupBegin(
+                _ID_TAB_MISSIONS, c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT,
+                cols=1, rows=6, title="Missions",
+            )
+            self.GroupBorderSpace(8, 8, 8, 8)
+
+            # Mission list (read-only summary; the artist picks one
+            # by index).
+            self.AddMultiLineEditText(
+                _ID_MISSIONS_LIST,
+                c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT,
+                inith=100,
+                style=c4d.DR_MULTILINE_READONLY | c4d.DR_MULTILINE_MONOSPACED,
+            )
+
+            # New / delete / import / export row.
+            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=4, rows=1)
+            self.AddButton(_ID_BTN_MISSION_NEW, c4d.BFH_SCALEFIT, name="New Mission")
+            self.AddButton(_ID_BTN_MISSION_DELETE, c4d.BFH_SCALEFIT, name="Delete")
+            self.AddButton(_ID_BTN_MISSION_IMPORT, c4d.BFH_SCALEFIT, name="Import…")
+            self.AddButton(_ID_BTN_MISSION_EXPORT, c4d.BFH_SCALEFIT, name="Export…")
+            self.GroupEnd()
+
+            # Pick / title / desc edit row.
+            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=4, rows=1)
+            self.AddStaticText(0, c4d.BFH_LEFT, name="Pick #")
+            self.AddEditNumberArrows(_ID_MISSIONS_INDEX, c4d.BFH_SCALEFIT)
+            self.SetInt32(_ID_MISSIONS_INDEX, 0, min=0, max=999, step=1)
+            self.AddStaticText(0, c4d.BFH_LEFT, name="Title")
+            self.AddEditText(_ID_MISSION_TITLE_INPUT, c4d.BFH_SCALEFIT)
+            self.GroupEnd()
+            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=2, rows=1)
+            self.AddStaticText(0, c4d.BFH_LEFT, name="Description")
+            self.AddEditText(_ID_MISSION_DESC_INPUT, c4d.BFH_SCALEFIT)
+            self.GroupEnd()
+
+            # Mission detail panel.
+            self.AddMultiLineEditText(
+                _ID_MISSIONS_DETAIL,
+                c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT,
+                inith=140,
+                style=c4d.DR_MULTILINE_READONLY | c4d.DR_MULTILINE_MONOSPACED,
+            )
+
+            # Add waypoint row.
+            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=4, rows=1)
+            self.AddButton(
+                _ID_BTN_MISSION_ADD_FROM_SELECTION, c4d.BFH_SCALEFIT,
+                name="Add Selected Object as Waypoint",
+            )
+            self.AddButton(
+                _ID_BTN_MISSION_ADD_FROM_BOOKMARK, c4d.BFH_SCALEFIT,
+                name="Add Picked Bookmark as Waypoint",
+            )
+            self.AddButton(_ID_BTN_MISSION_REMOVE_WP, c4d.BFH_SCALEFIT, name="Remove Last Waypoint")
+            self.AddButton(_ID_BTN_MISSION_PREVIEW_ROUTE, c4d.BFH_SCALEFIT, name="Preview as Route Spline")
+            self.GroupEnd()
+
+            # Playback controls.
+            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=6, rows=1)
+            self.AddButton(_ID_BTN_PLAYBACK_PREV, c4d.BFH_SCALEFIT, name="◀◀ Prev")
+            self.AddButton(_ID_BTN_PLAYBACK_STEP_BACK, c4d.BFH_SCALEFIT, name="◀ Step")
+            self.AddButton(_ID_BTN_PLAYBACK_PLAY, c4d.BFH_SCALEFIT, name="▶ Play")
+            self.AddButton(_ID_BTN_PLAYBACK_PAUSE, c4d.BFH_SCALEFIT, name="❚❚ Pause")
+            self.AddButton(_ID_BTN_PLAYBACK_STOP, c4d.BFH_SCALEFIT, name="◼ Stop")
+            self.AddButton(_ID_BTN_PLAYBACK_STEP_FWD, c4d.BFH_SCALEFIT, name="Step ▶")
+            self.GroupEnd()
+            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=4, rows=1)
+            self.AddStaticText(0, c4d.BFH_LEFT, name="Speed ×")
+            self.AddEditNumberArrows(_ID_PLAYBACK_SPEED, c4d.BFH_SCALEFIT)
+            self.SetFloat(_ID_PLAYBACK_SPEED, 1.0, min=0.1, max=10.0, step=0.1)
+            self.AddButton(_ID_BTN_PLAYBACK_NEXT, c4d.BFH_SCALEFIT, name="Next Wp ▶▶")
+            self.GroupEnd()
+            self.AddStaticText(
+                _ID_PLAYBACK_STATUS, c4d.BFH_SCALEFIT,
+                name="(no mission loaded)",
+            )
+
             self.GroupEnd()
 
         def InitValues(self) -> bool:
@@ -717,6 +825,36 @@ if _C4D_AVAILABLE:
                     self._do_nav_lock()
                 elif mid == _ID_BTN_NAV_UNLOCK:
                     self._do_nav_unlock()
+                elif mid == _ID_BTN_MISSION_NEW:
+                    self._do_mission_new()
+                elif mid == _ID_BTN_MISSION_DELETE:
+                    self._do_mission_delete()
+                elif mid == _ID_BTN_MISSION_IMPORT:
+                    self._do_mission_import()
+                elif mid == _ID_BTN_MISSION_EXPORT:
+                    self._do_mission_export()
+                elif mid == _ID_BTN_MISSION_ADD_FROM_SELECTION:
+                    self._do_mission_add_from_selection()
+                elif mid == _ID_BTN_MISSION_ADD_FROM_BOOKMARK:
+                    self._do_mission_add_from_bookmark()
+                elif mid == _ID_BTN_MISSION_REMOVE_WP:
+                    self._do_mission_remove_wp()
+                elif mid == _ID_BTN_MISSION_PREVIEW_ROUTE:
+                    self._do_mission_preview_route()
+                elif mid == _ID_BTN_PLAYBACK_PLAY:
+                    self._do_playback_transport("play")
+                elif mid == _ID_BTN_PLAYBACK_PAUSE:
+                    self._do_playback_transport("pause")
+                elif mid == _ID_BTN_PLAYBACK_STOP:
+                    self._do_playback_transport("stop")
+                elif mid == _ID_BTN_PLAYBACK_NEXT:
+                    self._do_playback_transport("next")
+                elif mid == _ID_BTN_PLAYBACK_PREV:
+                    self._do_playback_transport("prev")
+                elif mid == _ID_BTN_PLAYBACK_STEP_FWD:
+                    self._do_playback_transport("step_fwd")
+                elif mid == _ID_BTN_PLAYBACK_STEP_BACK:
+                    self._do_playback_transport("step_back")
             except Exception as exc:  # noqa: BLE001 — UI boundary handler
                 _log.exception("Dialog command %s failed", mid)
                 self._append_log(f"ERROR: {exc!r}")
@@ -1361,6 +1499,275 @@ if _C4D_AVAILABLE:
             except Exception:  # noqa: BLE001
                 pass
             self._append_log("Unlock: target cleared.")
+
+        # --- v1.4 mission helpers ---
+        _mission_manager = None
+        _active_mission_id = None
+        _playback = None
+
+        def _ensure_mission_manager(self):
+            if self._mission_manager is None:
+                from voyage.mission_manager import MissionManager
+                self._mission_manager = MissionManager()
+            return self._mission_manager
+
+        def _refresh_mission_panels(self) -> None:
+            from ui.mission_panel import (
+                render_mission_detail, render_mission_list,
+                render_playback_status,
+            )
+            mgr = self._ensure_mission_manager()
+            try:
+                self.SetString(_ID_MISSIONS_LIST, render_mission_list(mgr))
+                mission = self._active_mission()
+                if mission is not None:
+                    self.SetString(
+                        _ID_MISSIONS_DETAIL, render_mission_detail(mission),
+                    )
+                else:
+                    self.SetString(_ID_MISSIONS_DETAIL, "(no mission selected)")
+                self.SetString(
+                    _ID_PLAYBACK_STATUS, render_playback_status(self._playback),
+                )
+            except Exception:  # noqa: BLE001 — UI boundary
+                pass
+
+        def _active_mission(self):
+            mgr = self._ensure_mission_manager()
+            if self._active_mission_id is not None:
+                m = mgr.get(self._active_mission_id)
+                if m is not None:
+                    return m
+            try:
+                idx = int(self.GetInt32(_ID_MISSIONS_INDEX))
+            except Exception:  # noqa: BLE001
+                idx = 0
+            missions = mgr.list_all()
+            if 0 <= idx < len(missions):
+                self._active_mission_id = missions[idx].mission_id
+                return missions[idx]
+            return None
+
+        def _do_mission_new(self) -> None:
+            from ui.mission_panel import validate_title
+            from voyage.mission import Mission
+
+            mgr = self._ensure_mission_manager()
+            title = (self.GetString(_ID_MISSION_TITLE_INPUT) or "").strip()
+            if not title:
+                title = "New Mission"
+            ok, msg = validate_title(title)
+            if not ok:
+                self._append_log(msg)
+                return
+            desc = (self.GetString(_ID_MISSION_DESC_INPUT) or "").strip()
+            mission = Mission(title=title, description=desc)
+            mgr.create(mission)
+            self._active_mission_id = mission.mission_id
+            self._append_log(
+                f"Mission: created '{title}' ({mission.mission_id})."
+            )
+            self._refresh_mission_panels()
+
+        def _do_mission_delete(self) -> None:
+            mission = self._active_mission()
+            if mission is None:
+                self._append_log("Mission: nothing to delete.")
+                return
+            mgr = self._ensure_mission_manager()
+            mgr.delete(mission.mission_id)
+            if self._active_mission_id == mission.mission_id:
+                self._active_mission_id = None
+            self._playback = None
+            self._append_log(f"Mission: deleted '{mission.title}'.")
+            self._refresh_mission_panels()
+
+        def _do_mission_import(self) -> None:
+            try:
+                path = c4d.storage.LoadDialog(
+                    title="Import Mission JSON",
+                    flags=c4d.FILESELECT_LOAD,
+                )
+            except Exception:  # noqa: BLE001
+                path = None
+            if not path:
+                self._append_log("Mission: import cancelled.")
+                return
+            mgr = self._ensure_mission_manager()
+            mission = mgr.import_mission(path)
+            if mission is None:
+                self._append_log(f"Mission: could not import {path}.")
+                return
+            self._active_mission_id = mission.mission_id
+            self._append_log(f"Mission: imported '{mission.title}'.")
+            self._refresh_mission_panels()
+
+        def _do_mission_export(self) -> None:
+            mission = self._active_mission()
+            if mission is None:
+                self._append_log("Mission: select a mission first.")
+                return
+            try:
+                path = c4d.storage.LoadDialog(
+                    title="Export Mission JSON",
+                    flags=c4d.FILESELECT_SAVE,
+                )
+            except Exception:  # noqa: BLE001
+                path = None
+            if not path:
+                self._append_log("Mission: export cancelled.")
+                return
+            mgr = self._ensure_mission_manager()
+            ok = mgr.export_mission(mission.mission_id, path)
+            self._append_log(
+                f"Mission: exported to {path}." if ok
+                else f"Mission: export failed for {path}."
+            )
+
+        def _do_mission_add_from_selection(self) -> None:
+            from ui.metadata_panel import inspect_active_selection
+            from ui.mission_panel import add_object_waypoint
+
+            mission = self._active_mission()
+            if mission is None:
+                self._append_log("Mission: select or create a mission first.")
+                return
+            inspection = inspect_active_selection()
+            obj = inspection.catalog_object
+            if obj is None or not obj.uid:
+                self._append_log(
+                    "Mission: no UNAV object selected — Inspect first."
+                )
+                return
+            ok, msg = add_object_waypoint(
+                mission, uid=obj.uid, label=obj.name or obj.uid,
+                catalog_source=obj.catalog_source,
+                object_type=obj.object_type,
+            )
+            self._append_log(msg)
+            if ok:
+                self._ensure_mission_manager().update(mission)
+                self._refresh_mission_panels()
+
+        def _do_mission_add_from_bookmark(self) -> None:
+            from ui.mission_panel import add_bookmark_waypoint
+
+            mission = self._active_mission()
+            if mission is None:
+                self._append_log("Mission: select or create a mission first.")
+                return
+            if not self._bookmarks or len(self._bookmarks) == 0:
+                self._append_log("Mission: no bookmarks to add.")
+                return
+            try:
+                idx = int(self.GetInt32(_ID_BOOKMARKS_INDEX))
+            except Exception:  # noqa: BLE001
+                idx = 0
+            if not (0 <= idx < len(self._bookmarks)):
+                self._append_log(f"Mission: bookmark index {idx} out of range.")
+                return
+            bm = self._bookmarks[idx]
+            ok, msg = add_bookmark_waypoint(
+                mission, bookmark_id=bm.id, label=bm.display_label(),
+            )
+            self._append_log(msg)
+            if ok:
+                self._ensure_mission_manager().update(mission)
+                self._refresh_mission_panels()
+
+        def _do_mission_remove_wp(self) -> None:
+            from ui.mission_panel import remove_waypoint
+
+            mission = self._active_mission()
+            if mission is None or not mission.waypoints:
+                self._append_log("Mission: nothing to remove.")
+                return
+            ok, msg = remove_waypoint(mission, len(mission.waypoints) - 1)
+            self._append_log(msg)
+            if ok:
+                self._ensure_mission_manager().update(mission)
+                self._refresh_mission_panels()
+
+        def _do_mission_preview_route(self) -> None:
+            from voyage.camera_path import build_route_from_mission
+
+            mission = self._active_mission()
+            if mission is None:
+                self._append_log("Mission: select a mission first.")
+                return
+            route = build_route_from_mission(mission)
+            if len(route) == 0:
+                self._append_log(
+                    "Mission: no resolvable waypoints to render as a route."
+                )
+                return
+            # Replace the live route so existing 'Build Route Spline' works.
+            self._route = route
+            self._append_log(
+                f"Mission: replaced active route with {len(route)} waypoint(s)."
+            )
+
+        def _do_playback_transport(self, action: str) -> None:
+            from ui.mission_panel import (
+                build_camera_path_with_report,
+                render_playback_status,
+                render_tick,
+            )
+            from voyage.camera_path import CameraPathConfig
+            from voyage.playback import Playback, PlaybackConfig
+
+            mission = self._active_mission()
+            if mission is None:
+                self._append_log("Mission: select a mission first.")
+                return
+            try:
+                speed = float(self.GetFloat(_ID_PLAYBACK_SPEED))
+            except Exception:  # noqa: BLE001
+                speed = 1.0
+            if self._playback is None or action == "stop":
+                path, report = build_camera_path_with_report(
+                    mission, CameraPathConfig(speed_multiplier=speed),
+                )
+                if report.unresolved_count:
+                    self._append_log(
+                        f"Mission: {report.unresolved_count} waypoint(s) "
+                        "could not be resolved (no cached position)."
+                    )
+                if path.is_empty() or path.waypoint_count() < 2:
+                    self._append_log(
+                        "Mission: need ≥ 2 resolvable waypoints to play."
+                    )
+                    return
+                self._playback = Playback(
+                    path=path, config=PlaybackConfig(speed_multiplier=speed),
+                )
+            else:
+                self._playback.set_speed(speed)
+
+            tick = None
+            if action == "play":
+                tick = self._playback.play()
+            elif action == "pause":
+                tick = self._playback.pause()
+            elif action == "stop":
+                tick = self._playback.stop()
+            elif action == "next":
+                tick = self._playback.jump_to_next_waypoint()
+            elif action == "prev":
+                tick = self._playback.jump_to_previous_waypoint()
+            elif action == "step_fwd":
+                tick = self._playback.step_forward()
+            elif action == "step_back":
+                tick = self._playback.step_backward()
+            if tick is not None:
+                self._append_log(render_tick(tick))
+            try:
+                self.SetString(
+                    _ID_PLAYBACK_STATUS,
+                    render_playback_status(self._playback),
+                )
+            except Exception:  # noqa: BLE001
+                pass
 
         # The dataset manager dialog is async and persistent: we
         # keep one instance per session so re-clicking the menu

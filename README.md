@@ -189,6 +189,47 @@ the dataset registry's `<entry.name>:` namespace layers on top.
 Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
 
+### L. Guided Voyages (v1.4)
+
+v1.4 turns UNAV into a tool for **structured interstellar
+journeys**. Build a *mission* — an ordered list of waypoints
+sourced from catalog objects, bookmarks, free coordinates,
+or named anchors — and play it back through a deterministic
+cinematic camera path.
+
+```text
+1. Open the Missions tab (next to Search / Bookmarks / Navigation).
+2. Type a title, click "New Mission".
+3. Select a UNAV object → Inspect → "Add Selected Object as Waypoint".
+4. Pick a bookmark → "Add Picked Bookmark as Waypoint".
+5. Click "Preview as Route Spline" to see the path.
+6. Click ▶ Play to scrub the camera through the waypoints.
+```
+
+Per-waypoint optionals: epoch (the v1.2 Time Navigator state
+the playback should set when the cursor crosses this
+waypoint), orientation quaternion, dwell duration, free-text
+notes. Missions persist to ``~/.unav_pro/missions/`` and
+roundtrip through Import/Export.
+
+The playback engine is **deterministic** — same step → same
+pose, every time — and **frame-rate independent**: the dialog
+chooses how often `advance()` fires; the engine just reports
+the recommended interval. Visible-sector sync fires on
+transport jumps, at a bounded cadence during continuous play,
+and is automatically throttled when the artist scrubs faster
+than the pipeline can keep up.
+
+Walkthroughs:
+[`docs/V1_4_GUIDED_VOYAGES.md`](docs/V1_4_GUIDED_VOYAGES.md)
+— milestone summary,
+[`docs/MISSION_FORMAT.md`](docs/MISSION_FORMAT.md) — JSON
+layout + schema versioning,
+[`docs/CINEMATIC_CAMERA_PATHS.md`](docs/CINEMATIC_CAMERA_PATHS.md)
+— Catmull-Rom + slerp + epoch lerp,
+[`docs/PLAYBACK_SYSTEM.md`](docs/PLAYBACK_SYSTEM.md) —
+transport semantics + sync cadence + safety contract.
+
 ### K. Astrophysical Knowledge Layer (v1.3)
 
 v1.3 makes UNAV *explain* what you're selecting. Click any
@@ -568,6 +609,10 @@ the plugin's package layout is documented in [`docs/PLUGIN_STRUCTURE.md`](docs/P
 * [`docs/ASTROPHYSICAL_FIELD_GLOSSARY.md`](docs/ASTROPHYSICAL_FIELD_GLOSSARY.md) — definitions of every field the inspector renders.
 * [`docs/OBJECT_CLASSIFICATION_RULES.md`](docs/OBJECT_CLASSIFICATION_RULES.md) — deterministic per-source classifier cascade.
 * [`docs/METADATA_INTERPRETATION_LIMITS.md`](docs/METADATA_INTERPRETATION_LIMITS.md) — what v1.3 will and will not say about a row.
+* [`docs/V1_4_GUIDED_VOYAGES.md`](docs/V1_4_GUIDED_VOYAGES.md) — v1.4 milestone summary: mission system, cinematic camera paths, deterministic playback.
+* [`docs/MISSION_FORMAT.md`](docs/MISSION_FORMAT.md) — on-disk mission JSON layout + schema versioning.
+* [`docs/CINEMATIC_CAMERA_PATHS.md`](docs/CINEMATIC_CAMERA_PATHS.md) — Catmull-Rom + slerp + epoch lerp, deterministic guarantees.
+* [`docs/PLAYBACK_SYSTEM.md`](docs/PLAYBACK_SYSTEM.md) — transport semantics, sync cadence, safety contract.
 
 Per-feature deep docs:
 [`UNAV_PRO_ARCHITECTURE`](docs/UNAV_PRO_ARCHITECTURE.md) ·
@@ -664,7 +709,20 @@ the per-milestone phasing is in
   Position, Motion, Photometry, Redshift, Catalog Notes,
   Summary, Missing Data, Available Actions — and the rules
   never invent facts: missing fields are listed explicitly.
-  No AI, no network. **1128 Python tests pass.**
+  No AI, no network.
+* **v1.4** ships the guided voyage system. Missions
+  (ordered waypoint sequences with optional epochs,
+  orientations, durations, notes) persist to
+  `~/.unav_pro/missions/`. A Catmull-Rom + slerp camera path
+  builder produces an evaluable trajectory; a deterministic
+  integer-step playback engine drives it with `play` /
+  `pause` / `stop` / `step` / `next` / `prev` / `jump`
+  transports. The Missions tab plus six transport buttons
+  ship alongside `Import…` / `Export…` for sharing missions
+  between machines. Visible-sector sync fires on transport
+  jumps + at a bounded cadence during play; fast scrubs are
+  auto-throttled. Same input → byte-identical output.
+  **1221 Python tests pass.**
 
 ### Current limitations
 
@@ -693,6 +751,9 @@ the per-milestone phasing is in
   selection, an FTS5-backed name search, and a SceneHook that
   polls the request file per redraw for live Auto Sync — which
   also unlocks the per-frame play sweep the v1.2 Time Navigator
-  panel has wired but parked. The v1.2 epoch model + DB schema
-  v2 + binary v3 + v1.3 knowledge layer stay unchanged behind
+  panel has wired but parked, and the per-frame
+  ``Playback.advance()`` cadence the v1.4 voyage engine needs
+  for hands-free playback. The v1.2 epoch model + DB schema
+  v2 + binary v3 + v1.3 knowledge layer + v1.4 mission /
+  camera-path / playback contracts all stay unchanged behind
   the GPU / picking work.
