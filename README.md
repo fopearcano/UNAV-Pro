@@ -189,6 +189,32 @@ the dataset registry's `<entry.name>:` namespace layers on top.
 Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
 
+### H. Native bridge (v0.8 spike, v0.9 lands the binary loader)
+
+v0.8 is a feasibility spike that ships:
+
+* a documentation pack covering the Maxon SDK plugin types,
+  viewport-drawing research, and the migration plan from
+  Python prototype to native C++ plugin;
+* a placeholder `native/` C++ skeleton (no build wired today);
+* a real Python binary visible-sector exporter
+  (`tools/export_visible_sector_binary.py`) producing the file
+  the future native plugin will read.
+
+```bash
+# Pack a JSONL visible sector into the v0.8 binary file
+python tools/export_visible_sector_binary.py \
+    --input  data/catalogs/gaia_pleiades_sample.jsonl \
+    --output cache/binary/gaia_pleiades.unav
+```
+
+Walkthroughs:
+[`docs/V0_8_NATIVE_CPP_FEASIBILITY.md`](docs/V0_8_NATIVE_CPP_FEASIBILITY.md),
+[`docs/MAXON_SDK_PLUGIN_TYPES_FOR_UNAV.md`](docs/MAXON_SDK_PLUGIN_TYPES_FOR_UNAV.md),
+[`docs/NATIVE_VIEWPORT_DRAWING_RESEARCH.md`](docs/NATIVE_VIEWPORT_DRAWING_RESEARCH.md),
+[`docs/PYTHON_TO_CPP_MIGRATION_PLAN.md`](docs/PYTHON_TO_CPP_MIGRATION_PLAN.md),
+[`docs/BINARY_VISIBLE_SECTOR_FORMAT.md`](docs/BINARY_VISIBLE_SECTOR_FORMAT.md).
+
 ### G. Render Mode (v0.7) — Debug Objects / Instances / Point Cloud
 
 For larger scenes, switch the Render Mode strip in the dialog
@@ -397,6 +423,11 @@ the plugin's package layout is documented in [`docs/PLUGIN_STRUCTURE.md`](docs/P
 * [`docs/RENDER_BACKENDS.md`](docs/RENDER_BACKENDS.md) — backend interface contract.
 * [`docs/INSTANCE_MODE_LIMITATIONS.md`](docs/INSTANCE_MODE_LIMITATIONS.md) — what Instance Mode can and cannot do today.
 * [`docs/FUTURE_GPU_POINT_RENDERER.md`](docs/FUTURE_GPU_POINT_RENDERER.md) — the GPU path the Point Cloud backend will become.
+* [`docs/V0_8_NATIVE_CPP_FEASIBILITY.md`](docs/V0_8_NATIVE_CPP_FEASIBILITY.md) — v0.8 native-CPP feasibility spike summary.
+* [`docs/MAXON_SDK_PLUGIN_TYPES_FOR_UNAV.md`](docs/MAXON_SDK_PLUGIN_TYPES_FOR_UNAV.md) — which C4D SDK plugin types apply to UNAV.
+* [`docs/NATIVE_VIEWPORT_DRAWING_RESEARCH.md`](docs/NATIVE_VIEWPORT_DRAWING_RESEARCH.md) — viewport-draw API research for the v0.9 renderer.
+* [`docs/PYTHON_TO_CPP_MIGRATION_PLAN.md`](docs/PYTHON_TO_CPP_MIGRATION_PLAN.md) — phased migration ledger.
+* [`docs/BINARY_VISIBLE_SECTOR_FORMAT.md`](docs/BINARY_VISIBLE_SECTOR_FORMAT.md) — on-disk format the native plugin reads.
 
 Per-feature deep docs:
 [`UNAV_PRO_ARCHITECTURE`](docs/UNAV_PRO_ARCHITECTURE.md) ·
@@ -445,5 +476,39 @@ with mocked HTTP, and the dataclass shape of every UI controller.
 
 The plugin is a working Python prototype with the architecture set
 up so each piece can be replaced individually with a native /
-GPU-accelerated implementation when needed. The migration plan is
-in [`docs/ROADMAP_CPP_GPU_VERSION.md`](docs/ROADMAP_CPP_GPU_VERSION.md).
+GPU-accelerated implementation when needed. The long-term migration
+plan is in [`docs/ROADMAP_CPP_GPU_VERSION.md`](docs/ROADMAP_CPP_GPU_VERSION.md);
+the per-milestone phasing is in
+[`docs/PYTHON_TO_CPP_MIGRATION_PLAN.md`](docs/PYTHON_TO_CPP_MIGRATION_PLAN.md).
+
+### Current
+
+* **v0.7** ships the render-backend layer (Debug Objects /
+  Instances / Point Cloud-experimental) with per-mode safety
+  caps and the search-based metadata fallback. **840+ tests
+  pass.**
+* **v0.8** is a feasibility spike for the native plugin: locks
+  the C++ surface, ships the binary visible-sector exporter
+  (Python writer + reader + CLI), and documents the SDK
+  research. No native code is built yet — the `native/`
+  skeleton is placeholder declarations only.
+
+### Current Python limitations
+
+The v0.7 prototype's hard caps are `10 000` (Debug Objects),
+`200 000` (Instances), and `1 000 000` (Point Cloud,
+experimental). Beyond those, the C4D Object Manager and the
+GIL-bound per-row allocation become the bottleneck. Auto Sync
+is still a placeholder checkbox; real-time per-frame re-sync
+needs the v0.11+ GPU-compute filter.
+
+### Next step
+
+* **v0.9** — implement `UnavPointBuffer::loadFromFile` against
+  the v0.8 binary format, register the `UnavStarfield`
+  ObjectData class, draw the buffer in a single
+  `BaseDraw::DrawArray` call, and add an "engine: native"
+  status line to the Diagnostics dialog. The dialog gains a
+  fourth Render Mode — **Native (read-only)** — that consumes
+  the v0.8 binary file. The Python prototype keeps running as
+  the always-available fallback.
