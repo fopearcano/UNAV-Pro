@@ -51,6 +51,13 @@ from data.connectors._normalize import (
     to_float as _to_float,
     to_int as _to_int,
 )
+from data.connectors.redshift_distance import (
+    DEFAULT_REDSHIFT_DISTANCE_MAX_Z,
+    HUBBLE_KM_S_MPC,
+    SPEED_OF_LIGHT_KM_S,
+    safe_redshift_to_distance_pc,
+    stamp_proxy_metadata,
+)
 from data.schema import CatalogObject
 
 _log = get_logger("data.connectors.desi")
@@ -63,6 +70,11 @@ _RELEASE_TO_TABLE = {
     "desi_edr": "desi_edr.zpix",
     "desi_dr1": "desi_dr1.zpix",
 }
+
+#: Human-readable label written into every emitted ``CatalogObject``.
+#: The release token (``desi_edr`` / ``desi_dr1``) is preserved in
+#: ``metadata_json``.
+CATALOG_SOURCE_LABEL = "DESI"
 
 MAX_ROW_LIMIT = 100_000
 MAX_RADIUS_DEG = 30.0
@@ -78,12 +90,10 @@ _SPECTYPE_MAP: Dict[str, str] = {
     "STAR": "star",
 }
 
-#: Hubble constant for the coarse redshift→distance fallback. Same
-#: caveats as the SDSS connector — this is a stand-in for the real
-#: cosmology-aware comoving distance.
-HUBBLE_KM_S_MPC = 70.0
-SPEED_OF_LIGHT_KM_S = 299_792.458
-DEFAULT_REDSHIFT_DISTANCE_MAX_Z = 0.1
+# NOTE: ``HUBBLE_KM_S_MPC``, ``SPEED_OF_LIGHT_KM_S``, and
+# ``DEFAULT_REDSHIFT_DISTANCE_MAX_Z`` are re-exported from
+# ``redshift_distance`` for backwards compatibility with v0.3-era
+# CLIs and tests.
 
 #: Fields we ask DESI for. ``healpix`` is recorded so a future tile
 #: layer can fold these rows into the same HEALPix index used by Gaia.
@@ -248,22 +258,12 @@ def safe_redshift_to_distance(
     max_z: float = DEFAULT_REDSHIFT_DISTANCE_MAX_Z,
     h0_km_s_mpc: float = HUBBLE_KM_S_MPC,
 ) -> Optional[float]:
-    """Coarse Hubble-law distance in parsec, only when safe.
-
-    Returns ``None`` if:
-      * ``z`` is missing or ≤ 0;
-      * ``z`` exceeds ``max_z`` (naive Hubble breaks down);
-      * ``zwarn`` is non-zero (DESI quality bitmask: any flag means
-        the redshift fit is suspect).
-    """
-    if z is None or z <= 0.0:
-        return None
-    if zwarn is not None and zwarn != 0:
-        return None
-    if z > max_z:
-        return None
-    distance_mpc = SPEED_OF_LIGHT_KM_S * z / h0_km_s_mpc
-    return distance_mpc * 1.0e6
+    """Backwards-compatible facade over
+    ``redshift_distance.safe_redshift_to_distance_pc``. ``z_err`` is
+    accepted but unused (the linear inversion does not need it)."""
+    return safe_redshift_to_distance_pc(
+        z, zwarn=zwarn, max_z=max_z, h0_km_s_mpc=h0_km_s_mpc,
+    )
 
 
 def _resolve_object_type(spectype: Optional[str]) -> str:
@@ -292,8 +292,8 @@ def _row_to_object(
     spectype = (row.get("spectype") or row.get("SPECTYPE") or "").strip() or None
     object_type = _resolve_object_type(spectype)
 
-    distance_pc = safe_redshift_to_distance(
-        z, z_err=zerr, zwarn=zwarn, max_z=redshift_max_z,
+    distance_pc = safe_redshift_to_distance_pc(
+        z, zwarn=zwarn, max_z=redshift_max_z,
     )
 
     extra: Dict[str, Any] = {
@@ -310,10 +310,12 @@ def _row_to_object(
         "program": (row.get("program") or row.get("PROGRAM") or "").strip() or None,
         "healpix": _to_int(row.get("healpix") or row.get("HEALPIX")),
     }
+    if distance_pc is not None and z is not None:
+        stamp_proxy_metadata(extra, z=z, max_z=redshift_max_z)
 
     return CatalogObject(
-        uid=f"{release}:{targetid}",
-        catalog_source=release,
+        uid=f"desi:{targetid}",
+        catalog_source=CATALOG_SOURCE_LABEL,
         object_type=object_type,
         ra_deg=ra,
         dec_deg=dec,
@@ -356,3 +358,69 @@ def fetch_and_normalize(
 ) -> List[CatalogObject]:
     rows = fetch_rows(query, fetch_fn=fetch_fn, url=url)
     return normalize_rows(rows, release=query.release, redshift_max_z=redshift_max_z)
+
+
+# ---------------------------------------------------------------------------
+# CLI-friendly one-shot
+# ---------------------------------------------------------------------------
+
+
+from dataclasses import dataclass as _dataclass, field as _field
+from typing import List as _List
+
+
+@_dataclass
+class FetchAndWriteReport:
+    """Outcome of ``fetch_normalize_and_write``."""
+
+    output_path: str
+    object_count: int = 0
+    with_redshift: int = 0
+    with_proxy_distance: int = 0
+    warnings: _List[str] = _field(default_factory=list)
+    index_path: Optional[str] = None
+    index_total_objects: Optional[int] = None
+    index_cell_count: Optional[int] = None
+
+
+def fetch_normalize_and_write(
+    query: DESIQuery,
+    output_path: str,
+    *,
+    fetch_fn: Optional[FetchFn] = None,
+    url: str = DESI_TAP_SYNC_URL,
+    redshift_max_z: float = DEFAULT_REDSHIFT_DISTANCE_MAX_Z,
+    build_index_dir: Optional[str] = None,
+    index_chunk_size: int = 5_000,
+) -> FetchAndWriteReport:
+    """End-to-end: fetch + normalize + write JSONL + optional spatial
+    index. Mirrors the SDSS/JPL helpers so the CLIs look uniform."""
+    objects = fetch_and_normalize(
+        query, fetch_fn=fetch_fn, url=url, redshift_max_z=redshift_max_z,
+    )
+
+    from data.catalog_io import write_catalog
+
+    write_catalog(objects, output_path, fmt="jsonl")
+
+    with_z = sum(1 for o in objects if o.redshift is not None)
+    with_d = sum(1 for o in objects if o.distance_parsec is not None)
+    report = FetchAndWriteReport(
+        output_path=output_path,
+        object_count=len(objects),
+        with_redshift=with_z,
+        with_proxy_distance=with_d,
+    )
+    if not objects:
+        report.warnings.append("query returned 0 usable rows")
+
+    if build_index_dir and objects:
+        from core.spatial_index import build_index
+
+        index = build_index(
+            objects, build_index_dir, chunk_size=index_chunk_size,
+        )
+        report.index_path = build_index_dir
+        report.index_total_objects = index.total_objects
+        report.index_cell_count = len(index.cells)
+    return report

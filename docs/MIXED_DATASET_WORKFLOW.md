@@ -1,17 +1,21 @@
-# Mixed Dataset Workflow — Gaia + JPL in One C4D Scene
+# Mixed Dataset Workflow — Gaia + JPL + SDSS + DESI in One C4D Scene
 
 How to assemble a Cinema 4D scene that mixes a Gaia DR3 regional
-star catalog (v0.3) with a JPL Horizons solar-system snapshot
-(v0.4). Both feed the same visible-sector pipeline and the same
-metadata inspector — the contract makes sure their uids,
-catalog-source labels, and `object_type` tags stay disjoint, so
-the visual encoding can render them differently and the
-inspector can pull either record without ambiguity.
+star catalog (v0.3), a JPL Horizons solar-system snapshot (v0.4),
+and SDSS / DESI extragalactic catalogs (v0.5). All four feed the
+same visible-sector pipeline and the same metadata inspector —
+the contract makes sure their uids, catalog-source labels, and
+`object_type` tags stay disjoint, so the visual encoder can
+render them differently and the inspector can pull any record
+without ambiguity.
 
 For background see
 [`V0_3_GAIA_DR3_WORKFLOW.md`](V0_3_GAIA_DR3_WORKFLOW.md),
 [`V0_4_JPL_HORIZONS_WORKFLOW.md`](V0_4_JPL_HORIZONS_WORKFLOW.md),
+[`V0_5_SDSS_DESI_WORKFLOW.md`](V0_5_SDSS_DESI_WORKFLOW.md),
 [`SOLAR_SYSTEM_COORDINATES_AND_EPOCHS.md`](SOLAR_SYSTEM_COORDINATES_AND_EPOCHS.md),
+[`REDSHIFT_DISTANCE_LIMITATIONS.md`](REDSHIFT_DISTANCE_LIMITATIONS.md),
+[`EXTRAGALACTIC_VISUAL_ENCODING.md`](EXTRAGALACTIC_VISUAL_ENCODING.md),
 [`DATASET_MANAGER.md`](DATASET_MANAGER.md), and
 [`VISUAL_ENCODING.md`](VISUAL_ENCODING.md).
 
@@ -19,29 +23,37 @@ For background see
 
 ## 1. Why mixing works
 
-Two contracts make Gaia + JPL coexistence safe:
+Two contracts make Gaia + JPL + SDSS + DESI coexistence safe:
 
-1. **Disjoint uid prefixes.** The Gaia connector emits
-   `gaia:{source_id}`. The JPL connector emits
-   `jpl:{body}:{epoch}`. The two prefix namespaces never overlap,
-   so the metadata lookup never has to disambiguate a collision
-   inside a single dataset.
+1. **Disjoint uid prefixes.** Each connector emits a different
+   prefix:
+   * Gaia: `gaia:{source_id}`
+   * JPL Horizons: `jpl:{body}:{epoch}`
+   * SDSS: `sdss:{specObjID or objID}`
+   * DESI: `desi:{targetid}`
+
+   The four prefix namespaces never overlap, so the metadata
+   lookup never has to disambiguate a collision inside a single
+   dataset.
 2. **Per-dataset registry namespace.** The Dataset Manager wraps
    every uid as `<dataset_name>:<original_uid>` when it merges
    active datasets into the metadata lookup. So even if two
-   different JSONLs both happened to reuse a connector uid, the
-   registry namespace prevents collision across datasets.
+   different JSONLs both reused a connector uid, the registry
+   namespace prevents collision across datasets.
 
 The same two contracts apply to `catalog_source` and
 `object_type`:
 
-* `catalog_source` is `"Gaia DR3"` / `"Gaia DR2"` for stars and
-  `"JPL Horizons"` for solar-system bodies. The visual encoder's
-  *catalog source* mode renders each source with its own colour.
-* `object_type` is `"star"` for Gaia and one of
+* `catalog_source` is one of `"Gaia DR3"` / `"Gaia DR2"` /
+  `"JPL Horizons"` / `"SDSS"` / `"DESI"`. The visual encoder's
+  *catalog source* mode renders each source with its own colour
+  (see [`EXTRAGALACTIC_VISUAL_ENCODING.md`](EXTRAGALACTIC_VISUAL_ENCODING.md)
+  for the palette).
+* `object_type` is `"star"` for Gaia, one of
   `"planet" / "moon" / "asteroid" / "comet" / "spacecraft"` for
-  JPL. The visual encoder's *object type* mode distinguishes
-  them at sight.
+  JPL, and `"galaxy" / "quasar" / "star" / "unknown"` for SDSS
+  and DESI. The visual encoder's *object type* mode and *redshift*
+  mode distinguish them at sight.
 
 ---
 

@@ -51,6 +51,13 @@ from data.connectors._normalize import (
     to_float as _to_float,
     to_int as _to_int,
 )
+from data.connectors.redshift_distance import (
+    DEFAULT_REDSHIFT_DISTANCE_MAX_Z,
+    HUBBLE_KM_S_MPC,
+    SPEED_OF_LIGHT_KM_S,
+    safe_redshift_to_distance_pc,
+    stamp_proxy_metadata,
+)
 from data.schema import CatalogObject
 
 _log = get_logger("data.connectors.sdss")
@@ -63,6 +70,12 @@ _RELEASE_TO_ENDPOINT = {
     "sdss_dr18": "https://skyserver.sdss.org/dr18/SkyServerWS/SearchTools/SqlSearch",
     "sdss_dr17": "https://skyserver.sdss.org/dr17/SkyServerWS/SearchTools/SqlSearch",
 }
+
+#: Human-readable label written into every emitted ``CatalogObject``.
+#: Distinct from the per-release token (``sdss_dr18`` / ``sdss_dr17``)
+#: which is preserved in ``metadata_json``. The dataset manager and
+#: inspector show this label.
+CATALOG_SOURCE_LABEL = "SDSS"
 
 #: Hard ceiling on row count.
 MAX_ROW_LIMIT = 100_000
@@ -91,13 +104,10 @@ _SPEC_CLASS_MAP: Dict[str, str] = {
     "STAR": "star",
 }
 
-#: Hubble constant assumed by ``safe_redshift_to_distance`` (km/s/Mpc).
-HUBBLE_KM_S_MPC = 70.0
-SPEED_OF_LIGHT_KM_S = 299_792.458
-#: Above this z the naive Hubble inversion is meaningless; we leave
-#: ``distance_parsec`` as None and let the schema's placeholder sphere
-#: take over.
-DEFAULT_REDSHIFT_DISTANCE_MAX_Z = 0.1
+# NOTE: ``HUBBLE_KM_S_MPC``, ``SPEED_OF_LIGHT_KM_S``, and
+# ``DEFAULT_REDSHIFT_DISTANCE_MAX_Z`` are re-exported from
+# ``redshift_distance`` for backwards compatibility with the v0.4-era
+# CLIs and tests that import them off this module.
 
 
 # ---------------------------------------------------------------------------
@@ -275,22 +285,11 @@ def safe_redshift_to_distance(
     max_z: float = DEFAULT_REDSHIFT_DISTANCE_MAX_Z,
     h0_km_s_mpc: float = HUBBLE_KM_S_MPC,
 ) -> Optional[float]:
-    """Coarse Hubble-law distance in parsec.
-
-    Only returns a number when ``0 < z <= max_z`` (Hubble's law is a
-    poor approximation past ~ 0.1 in z); otherwise returns ``None``
-    and the schema's placeholder-sphere fallback applies.
-
-    Beyond ``max_z`` the right answer is a cosmology-aware comoving
-    distance; that is a future-tightening (a Bayesian / FlatLambdaCDM
-    integrator), not an MVP feature.
-    """
-    if z is None or z <= 0.0:
-        return None
-    if z > max_z:
-        return None
-    distance_mpc = SPEED_OF_LIGHT_KM_S * z / h0_km_s_mpc
-    return distance_mpc * 1.0e6  # Mpc → pc
+    """Backwards-compatible facade over
+    ``redshift_distance.safe_redshift_to_distance_pc``. ``z_err`` is
+    accepted for API symmetry with v0.3-era callers but is unused —
+    the underlying mapping is linear in ``z``."""
+    return safe_redshift_to_distance_pc(z, max_z=max_z, h0_km_s_mpc=h0_km_s_mpc)
 
 
 def _row_to_object(
@@ -312,7 +311,7 @@ def _row_to_object(
 
     spec_z = _to_float(row.get("spec_z") or row.get("z"))
     spec_zerr = _to_float(row.get("spec_zerr") or row.get("zErr") or row.get("zerr"))
-    distance_pc = safe_redshift_to_distance(spec_z, spec_zerr, max_z=redshift_max_z)
+    distance_pc = safe_redshift_to_distance_pc(spec_z, max_z=redshift_max_z)
 
     # SDSS ``r``-band model magnitude is the most stable single-band
     # tracer across the survey; use it as ``apparent_magnitude``.
@@ -322,12 +321,13 @@ def _row_to_object(
     if mag_g is not None and mag_r is not None:
         color_g_r = mag_g - mag_r
 
+    specobjid = (row.get("specObjID") or "").strip() or None
     extra: Dict[str, Any] = {
         "objid": objid,
         "release": release,
         "spec_class": spec_class,
         "spec_subclass": (row.get("spec_subclass") or "").strip() or None,
-        "specobjid": (row.get("specObjID") or "").strip() or None,
+        "specobjid": specobjid,
         "spec_zerr": spec_zerr,
         "modelMag_u": _to_float(row.get("modelMag_u")),
         "modelMag_g": mag_g,
@@ -336,10 +336,16 @@ def _row_to_object(
         "modelMag_z": _to_float(row.get("modelMag_z")),
         "photo_type": photo_type,
     }
+    if distance_pc is not None and spec_z is not None:
+        stamp_proxy_metadata(extra, z=spec_z, max_z=redshift_max_z)
 
+    # uid prefix is the connector token (``sdss``), release token lives
+    # in metadata_json. Prefer specObjID when present (canonical pointer
+    # for redshift catalogs); fall back to photometric objID.
+    uid_segment = specobjid or objid
     return CatalogObject(
-        uid=f"{release}:{objid}",
-        catalog_source=release,
+        uid=f"sdss:{uid_segment}",
+        catalog_source=CATALOG_SOURCE_LABEL,
         object_type=object_type,
         ra_deg=ra,
         dec_deg=dec,
@@ -384,3 +390,69 @@ def fetch_and_normalize(
 ) -> List[CatalogObject]:
     rows = fetch_rows(query, fetch_fn=fetch_fn, url=url)
     return normalize_rows(rows, release=query.release, redshift_max_z=redshift_max_z)
+
+
+# ---------------------------------------------------------------------------
+# CLI-friendly one-shot
+# ---------------------------------------------------------------------------
+
+
+from dataclasses import dataclass as _dataclass, field as _field
+from typing import List as _List
+
+
+@_dataclass
+class FetchAndWriteReport:
+    """Outcome of ``fetch_normalize_and_write``."""
+
+    output_path: str
+    object_count: int = 0
+    with_redshift: int = 0
+    with_proxy_distance: int = 0
+    warnings: _List[str] = _field(default_factory=list)
+    index_path: Optional[str] = None
+    index_total_objects: Optional[int] = None
+    index_cell_count: Optional[int] = None
+
+
+def fetch_normalize_and_write(
+    query: SDSSQuery,
+    output_path: str,
+    *,
+    fetch_fn: Optional[FetchFn] = None,
+    url: Optional[str] = None,
+    redshift_max_z: float = DEFAULT_REDSHIFT_DISTANCE_MAX_Z,
+    build_index_dir: Optional[str] = None,
+    index_chunk_size: int = 5_000,
+) -> FetchAndWriteReport:
+    """End-to-end: fetch + normalize + write JSONL + optional spatial
+    index. Mirrors the v0.4 JPL helper so the CLIs look uniform."""
+    objects = fetch_and_normalize(
+        query, fetch_fn=fetch_fn, url=url, redshift_max_z=redshift_max_z,
+    )
+
+    from data.catalog_io import write_catalog
+
+    write_catalog(objects, output_path, fmt="jsonl")
+
+    with_z = sum(1 for o in objects if o.redshift is not None)
+    with_d = sum(1 for o in objects if o.distance_parsec is not None)
+    report = FetchAndWriteReport(
+        output_path=output_path,
+        object_count=len(objects),
+        with_redshift=with_z,
+        with_proxy_distance=with_d,
+    )
+    if not objects:
+        report.warnings.append("query returned 0 usable rows")
+
+    if build_index_dir and objects:
+        from core.spatial_index import build_index
+
+        index = build_index(
+            objects, build_index_dir, chunk_size=index_chunk_size,
+        )
+        report.index_path = build_index_dir
+        report.index_total_objects = index.total_objects
+        report.index_cell_count = len(index.cells)
+    return report

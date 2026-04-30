@@ -8,6 +8,7 @@ import pytest
 
 from data.connectors import desi_connector as desi
 from data.connectors.desi_connector import (
+    CATALOG_SOURCE_LABEL,
     DEFAULT_DESI_RELEASE,
     MAX_RADIUS_DEG,
     MAX_ROW_LIMIT,
@@ -165,8 +166,10 @@ def test_normalize_galaxy_row():
     objs = normalize_rows([row])
     assert len(objs) == 1
     o = objs[0]
-    assert o.uid == "desi_edr:39633072104341543"
-    assert o.catalog_source == "desi_edr"
+    # v0.5 contract: uid is "desi:{targetid}", source label "DESI",
+    # release token preserved in metadata_json.
+    assert o.uid == "desi:39633072104341543"
+    assert o.catalog_source == CATALOG_SOURCE_LABEL == "DESI"
     assert o.object_type == "galaxy"
     assert o.redshift == pytest.approx(0.05)
     assert o.distance_parsec is not None and o.distance_parsec > 0
@@ -237,7 +240,7 @@ def test_normalize_accepts_uppercase_column_names():
     }
     objs = normalize_rows([row])
     assert len(objs) == 1
-    assert objs[0].uid == "desi_edr:abc"
+    assert objs[0].uid == "desi:abc"
     assert objs[0].object_type == "galaxy"
 
 
@@ -285,6 +288,113 @@ def test_fetch_and_normalize_end_to_end():
     fetcher, _ = _make_fetcher(body)
     q = DESIQuery(ra_deg=180.0, dec_deg=30.0, radius_deg=1.0, limit=10)
     objs = fetch_and_normalize(q, fetch_fn=fetcher)
-    assert [o.uid for o in objs] == ["desi_edr:1", "desi_edr:3"]
+    assert [o.uid for o in objs] == ["desi:1", "desi:3"]
     assert {o.object_type for o in objs} == {"galaxy", "quasar"}
-    assert all(o.catalog_source == DEFAULT_DESI_RELEASE for o in objs)
+    assert all(o.catalog_source == "DESI" for o in objs)
+    extras = [json.loads(o.metadata_json) for o in objs]
+    assert all(e["release"] == DEFAULT_DESI_RELEASE for e in extras)
+
+
+# ---------------------------------------------------------------------------
+# v0.5 — extragalactic catalog contract additions
+# ---------------------------------------------------------------------------
+
+
+def test_v05_metadata_stamps_proxy_distance_when_low_z_clean():
+    row = {
+        "targetid": "1", "target_ra": "10", "target_dec": "20",
+        "z": "0.05", "zerr": "0.0001", "zwarn": "0", "spectype": "GALAXY",
+        "survey": "main", "program": "bright",
+    }
+    o = normalize_rows([row])[0]
+    assert o.distance_parsec is not None
+    extra = json.loads(o.metadata_json)
+    assert extra["distance_method"] == "redshift_hubble_proxy"
+    assert "approximate" in extra["distance_proxy_warning"].lower()
+    assert extra["distance_proxy_z"] == pytest.approx(0.05)
+
+
+def test_v05_metadata_does_not_stamp_proxy_when_zwarn_blocks():
+    row = {
+        "targetid": "1", "target_ra": "10", "target_dec": "20",
+        "z": "0.05", "zerr": "0.0001", "zwarn": "1", "spectype": "GALAXY",
+    }
+    o = normalize_rows([row])[0]
+    assert o.distance_parsec is None
+    extra = json.loads(o.metadata_json)
+    assert "distance_method" not in extra
+
+
+def test_v05_release_token_preserved_in_metadata():
+    row = {
+        "targetid": "abc", "target_ra": "10", "target_dec": "20",
+        "spectype": "GALAXY",
+    }
+    o = normalize_rows([row], release="desi_dr1")[0]
+    assert o.catalog_source == "DESI"  # label, not release
+    extra = json.loads(o.metadata_json)
+    assert extra["release"] == "desi_dr1"
+
+
+def test_v05_fetch_normalize_and_write_writes_jsonl(tmp_path):
+    from data.connectors.desi_connector import fetch_normalize_and_write
+    body = _csv(
+        "1,180.0,30.0,0.05,0.0001,0,GALAXY,BGS,1,main,bright,12345",
+    )
+    fetcher, _ = _make_fetcher(body)
+    out = tmp_path / "desi.jsonl"
+    q = DESIQuery(ra_deg=180.0, dec_deg=30.0, radius_deg=1.0, limit=10)
+    report = fetch_normalize_and_write(q, str(out), fetch_fn=fetcher)
+    assert report.object_count == 1
+    assert report.with_redshift == 1
+    assert report.with_proxy_distance == 1
+    line = out.read_text(encoding="utf-8").splitlines()[0]
+    payload = json.loads(line)
+    assert payload["uid"] == "desi:1"
+    assert payload["catalog_source"] == "DESI"
+
+
+def test_v05_fetch_normalize_and_write_with_index(tmp_path):
+    from data.connectors.desi_connector import fetch_normalize_and_write
+    body = _csv(
+        "1,180.0,30.0,0.05,0.0001,0,GALAXY,BGS,1,main,bright,12345",
+        "2,180.1,30.1,0.04,0.0001,0,GALAXY,BGS,1,main,bright,12346",
+    )
+    fetcher, _ = _make_fetcher(body)
+    out = tmp_path / "desi.jsonl"
+    idx = tmp_path / "desi_idx"
+    q = DESIQuery(ra_deg=180.0, dec_deg=30.0, radius_deg=1.0, limit=10)
+    report = fetch_normalize_and_write(
+        q, str(out), fetch_fn=fetcher,
+        build_index_dir=str(idx), index_chunk_size=1000,
+    )
+    assert report.index_path == str(idx)
+    assert report.index_total_objects == 2
+    assert (idx / "index.json").exists()
+
+
+def test_v05_cli_writes_jsonl(tmp_path, monkeypatch):
+    from tools import fetch_desi_region
+    body = _csv(
+        "1,180.0,30.0,0.05,0.0001,0,GALAXY,BGS,1,main,bright,12345",
+    )
+    fetcher, _ = _make_fetcher(body)
+    from data.connectors import desi_connector
+    monkeypatch.setattr(desi_connector, "_http_fetch", fetcher)
+
+    out = tmp_path / "desi_cli.jsonl"
+    rc = fetch_desi_region.main([
+        "--ra", "180.0", "--dec", "30.0", "--radius-deg", "1.0",
+        "--limit", "10", "--output", str(out), "--quiet",
+    ])
+    assert rc == 0
+    assert out.exists()
+
+
+def test_v05_cli_invalid_args_returns_2(tmp_path):
+    from tools import fetch_desi_region
+    rc = fetch_desi_region.main([
+        "--ra", "999.0", "--dec", "0.0", "--radius-deg", "0.1",
+        "--output", str(tmp_path / "x.jsonl"), "--quiet",
+    ])
+    assert rc == 2

@@ -8,6 +8,7 @@ import pytest
 
 from data.connectors import sdss_connector as sdss
 from data.connectors.sdss_connector import (
+    CATALOG_SOURCE_LABEL,
     DEFAULT_SDSS_RELEASE,
     MAX_RADIUS_DEG,
     MAX_ROW_LIMIT,
@@ -154,8 +155,10 @@ def test_normalize_galaxy_row_with_spectro():
     objs = normalize_rows([row])
     assert len(objs) == 1
     o = objs[0]
-    assert o.uid == "sdss_dr18:1237660025074876421"
-    assert o.catalog_source == "sdss_dr18"
+    # v0.5 contract: uid is "sdss:{specObjID or objID}", source label "SDSS",
+    # release token preserved in metadata_json.
+    assert o.uid == "sdss:299493011468288000"
+    assert o.catalog_source == CATALOG_SOURCE_LABEL == "SDSS"
     assert o.object_type == "galaxy"
     assert o.ra_deg == 180.0 and o.dec_deg == 30.0
     assert o.redshift == pytest.approx(0.05)
@@ -298,6 +301,141 @@ def test_fetch_and_normalize_returns_catalog_objects():
     fetcher, _ = _make_fetcher(body)
     q = SDSSQuery(ra_deg=180.0, dec_deg=30.0, radius_deg=0.5, limit=10)
     objs = fetch_and_normalize(q, fetch_fn=fetcher)
-    assert [o.uid for o in objs] == ["sdss_dr18:1", "sdss_dr18:3"]
+    # specObjID is preferred when present; row 1 has 9001, row 3 has 9002.
+    assert [o.uid for o in objs] == ["sdss:9001", "sdss:9002"]
     assert {o.object_type for o in objs} == {"galaxy", "quasar"}
-    assert all(o.catalog_source == DEFAULT_SDSS_RELEASE for o in objs)
+    assert all(o.catalog_source == "SDSS" for o in objs)
+    # Release token preserved in metadata_json.
+    extras = [json.loads(o.metadata_json) for o in objs]
+    assert all(e["release"] == DEFAULT_SDSS_RELEASE for e in extras)
+
+
+# ---------------------------------------------------------------------------
+# v0.5 — extragalactic catalog contract additions
+# ---------------------------------------------------------------------------
+
+
+def test_v05_uid_uses_specobjid_when_present():
+    row = {
+        "objID": "PHOTO123", "ra": "10", "dec": "20", "type": "3",
+        "specObjID": "SPEC456", "spec_z": "0.05", "spec_class": "GALAXY",
+    }
+    o = normalize_rows([row])[0]
+    assert o.uid == "sdss:SPEC456"
+    extra = json.loads(o.metadata_json)
+    assert extra["objid"] == "PHOTO123"
+    assert extra["specobjid"] == "SPEC456"
+
+
+def test_v05_uid_falls_back_to_objid_when_no_spectro():
+    row = {"objID": "PHOTO123", "ra": "10", "dec": "20", "type": "3"}
+    o = normalize_rows([row])[0]
+    assert o.uid == "sdss:PHOTO123"
+
+
+def test_v05_metadata_stamps_proxy_distance_at_low_z():
+    row = {
+        "objID": "1", "ra": "10", "dec": "20", "type": "3",
+        "spec_z": "0.05", "spec_class": "GALAXY",
+    }
+    o = normalize_rows([row])[0]
+    assert o.distance_parsec is not None
+    extra = json.loads(o.metadata_json)
+    assert extra["distance_method"] == "redshift_hubble_proxy"
+    assert "approximate" in extra["distance_proxy_warning"].lower()
+    assert extra["distance_proxy_z"] == pytest.approx(0.05)
+
+
+def test_v05_metadata_does_not_stamp_proxy_when_no_distance_returned():
+    # High z → distance rejected → no proxy stamp.
+    row = {
+        "objID": "1", "ra": "10", "dec": "20", "type": "3",
+        "spec_z": "1.5", "spec_class": "QSO",
+    }
+    o = normalize_rows([row])[0]
+    assert o.distance_parsec is None
+    extra = json.loads(o.metadata_json)
+    assert "distance_method" not in extra
+
+
+def test_v05_release_token_preserved_in_metadata():
+    row = {
+        "objID": "1", "ra": "10", "dec": "20", "type": "3",
+        "spec_class": "GALAXY",
+    }
+    o = normalize_rows([row], release="sdss_dr17")[0]
+    assert o.catalog_source == "SDSS"  # label, not release
+    extra = json.loads(o.metadata_json)
+    assert extra["release"] == "sdss_dr17"
+
+
+def test_v05_fetch_normalize_and_write_writes_jsonl(tmp_path):
+    from data.connectors.sdss_connector import fetch_normalize_and_write
+    body = _csv(
+        _PHOTO_SPEC_HEADER,
+        "1,180.0,30.0,3,20.5,19.2,18.7,18.4,18.2,9001,0.05,0.0001,GALAXY,STARBURST",
+    )
+    fetcher, _ = _make_fetcher(body)
+    out = tmp_path / "sdss.jsonl"
+    q = SDSSQuery(ra_deg=180.0, dec_deg=30.0, radius_deg=0.5, limit=10)
+    report = fetch_normalize_and_write(q, str(out), fetch_fn=fetcher)
+    assert report.object_count == 1
+    assert report.with_redshift == 1
+    assert report.with_proxy_distance == 1
+    assert out.exists()
+    line = out.read_text(encoding="utf-8").splitlines()[0]
+    payload = json.loads(line)
+    assert payload["uid"] == "sdss:9001"
+    assert payload["catalog_source"] == "SDSS"
+
+
+def test_v05_fetch_normalize_and_write_with_index(tmp_path):
+    from data.connectors.sdss_connector import fetch_normalize_and_write
+    body = _csv(
+        _PHOTO_SPEC_HEADER,
+        "1,180.0,30.0,3,20.5,19.2,18.7,18.4,18.2,9001,0.05,0.0001,GALAXY,STARBURST",
+        "2,180.1,30.1,3,20.5,19.2,18.7,18.4,18.2,9002,0.04,0.0001,GALAXY,STARBURST",
+    )
+    fetcher, _ = _make_fetcher(body)
+    out = tmp_path / "sdss.jsonl"
+    idx = tmp_path / "sdss_idx"
+    q = SDSSQuery(ra_deg=180.0, dec_deg=30.0, radius_deg=0.5, limit=10)
+    report = fetch_normalize_and_write(
+        q, str(out), fetch_fn=fetcher,
+        build_index_dir=str(idx), index_chunk_size=1000,
+    )
+    assert report.index_path == str(idx)
+    assert report.index_total_objects == 2
+    assert (idx / "index.json").exists()
+
+
+def test_v05_cli_writes_jsonl(tmp_path, monkeypatch):
+    """End-to-end CLI smoke: monkey-patch the fetcher, run main()."""
+    from tools import fetch_sdss_region
+
+    body = _csv(
+        _PHOTO_SPEC_HEADER,
+        "1,180.0,30.0,3,20.5,19.2,18.7,18.4,18.2,9001,0.05,0.0001,GALAXY,STARBURST",
+    )
+    fetcher, _ = _make_fetcher(body)
+
+    # Inject the fetcher by patching the connector's fetch function.
+    from data.connectors import sdss_connector
+    monkeypatch.setattr(sdss_connector, "_http_fetch", fetcher)
+
+    out = tmp_path / "sdss_cli.jsonl"
+    rc = fetch_sdss_region.main([
+        "--ra", "180.0", "--dec", "30.0", "--radius-deg", "0.5",
+        "--limit", "10", "--output", str(out), "--quiet",
+    ])
+    assert rc == 0
+    assert out.exists()
+
+
+def test_v05_cli_invalid_args_returns_2(tmp_path):
+    from tools import fetch_sdss_region
+    rc = fetch_sdss_region.main([
+        "--ra", "999.0", "--dec", "0.0", "--radius-deg", "0.1",
+        "--output", str(tmp_path / "x.jsonl"), "--quiet",
+    ])
+    assert rc == 2

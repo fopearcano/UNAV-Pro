@@ -85,17 +85,34 @@ SIZE_MODE_LABELS: Tuple[Tuple[str, str], ...] = (
 # Palette tables
 # ---------------------------------------------------------------------------
 
-#: Per-source default colour for the ``catalog_source`` mode. Unknown
-#: sources fall back to a neutral grey.
+#: Per-source default colour for the ``catalog_source`` mode. Both the
+#: legacy release tokens (``gaia_dr3``, ``sdss_dr18``, …) and the v0.4+
+#: human-readable labels (``Gaia DR3``, ``SDSS``, ``DESI``,
+#: ``JPL Horizons``) map to the same palette so a mixed Gaia / JPL /
+#: SDSS / DESI scene renders consistently regardless of which contract
+#: the catalog was emitted under. Unknown sources fall back to a
+#: neutral grey.
 _SOURCE_COLORS: Dict[str, Tuple[int, int, int]] = {
-    "gaia_dr3":    (170, 191, 255),
-    "gaia_dr2":    (170, 191, 255),
-    "sdss_dr18":   (255, 200, 130),
-    "sdss_dr17":   (255, 200, 130),
-    "desi_edr":    (130, 220, 180),
-    "desi_dr1":    (130, 220, 180),
-    "jpl_horizons": (240, 220, 100),
-    "unav_sample": (220, 220, 220),
+    # Stars (Gaia) — cool blue-white.
+    "gaia_dr3":      (170, 191, 255),
+    "gaia_dr2":      (170, 191, 255),
+    "Gaia DR3":      (170, 191, 255),
+    "Gaia DR2":      (170, 191, 255),
+    # Extragalactic photo + spec (SDSS) — warm amber so galaxies and
+    # quasars read as separate from Gaia stars.
+    "sdss_dr18":     (255, 200, 130),
+    "sdss_dr17":     (255, 200, 130),
+    "SDSS":          (255, 200, 130),
+    # Extragalactic spec (DESI) — green-teal so DESI reads as separate
+    # from SDSS at sight, even when both are loaded in one scene.
+    "desi_edr":      (130, 220, 180),
+    "desi_dr1":      (130, 220, 180),
+    "DESI":          (130, 220, 180),
+    # Solar-system bodies (JPL Horizons) — yellow-gold so planets pop
+    # against both star fields and extragalactic catalogs.
+    "jpl_horizons":  (240, 220, 100),
+    "JPL Horizons":  (240, 220, 100),
+    "unav_sample":   (220, 220, 220),
 }
 
 #: Per-type fixed radius (C4D units before ``size_scale``) for the

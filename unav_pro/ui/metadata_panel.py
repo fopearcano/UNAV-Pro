@@ -43,6 +43,10 @@ from c4d_objects.point_cloud_builder import (
 from core.logging_util import get_logger
 from core.metadata_lookup import MetadataLookup, default_lookup
 from core.plugin_ids import BC_ID_UNAV_MARKER
+from data.connectors.redshift_distance import (
+    DISTANCE_METHOD_REDSHIFT_PROXY,
+    DISTANCE_PROXY_WARNING_TEXT,
+)
 from data.schema import CatalogObject
 
 _log = get_logger("ui.metadata_panel")
@@ -148,6 +152,19 @@ def _fmt_optional_float(value: Any, fmt: str = "{:.6g}") -> Optional[str]:
         return None
 
 
+def _safe_parse_meta(blob: Optional[str]) -> Dict[str, Any]:
+    """Parse a ``metadata_json`` string blob; return ``{}`` on any
+    failure. Used by the inspector to look up survey / object class /
+    distance-method tags without aborting the whole render."""
+    if not blob:
+        return {}
+    try:
+        parsed = json.loads(blob)
+    except (TypeError, ValueError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
 def _format_display_text(result: InspectionResult) -> str:
     if result.status == STATUS_NO_DOC:
         return "No active document. Open a scene to inspect a UNAV object."
@@ -193,6 +210,7 @@ def _format_display_text(result: InspectionResult) -> str:
     # --- Astrometry --------------------------------------------------
     lines.append("")
     lines.append("--- Astrometry ---")
+    parsed_meta = _safe_parse_meta(obj.metadata_json) if obj is not None else {}
     if obj is not None:
         lines.append(f"RA  (deg)      : {obj.ra_deg:.6f}")
         lines.append(f"Dec (deg)      : {obj.dec_deg:.6f}")
@@ -205,6 +223,11 @@ def _format_display_text(result: InspectionResult) -> str:
             shown = _fmt_optional_float(value, fmt)
             if shown is not None:
                 lines.append(f"{label}: {shown}")
+        if parsed_meta.get("distance_method") == DISTANCE_METHOD_REDSHIFT_PROXY:
+            lines.append(
+                "Distance note  : APPROXIMATE — "
+                + DISTANCE_PROXY_WARNING_TEXT
+            )
         if obj.proper_motion_ra is not None or obj.proper_motion_dec is not None:
             pm_ra = obj.proper_motion_ra if obj.proper_motion_ra is not None else 0.0
             pm_dec = obj.proper_motion_dec if obj.proper_motion_dec is not None else 0.0
@@ -241,6 +264,37 @@ def _format_display_text(result: InspectionResult) -> str:
                 lines.append(f"{label}: {shown}")
         if obj.spectral_type:
             lines.append(f"Spectral type  : {obj.spectral_type}")
+
+    # --- Survey / class (extragalactic catalogs) --------------------
+    if obj is not None and parsed_meta:
+        survey_lines: List[str] = []
+        # SDSS spec class / subclass.
+        spec_class = parsed_meta.get("spec_class")
+        spec_subclass = parsed_meta.get("spec_subclass")
+        # DESI spectype / subtype.
+        spectype = parsed_meta.get("spectype")
+        subtype = parsed_meta.get("subtype")
+        survey = parsed_meta.get("survey")
+        program = parsed_meta.get("program")
+        release = parsed_meta.get("release")
+        if spec_class:
+            survey_lines.append(f"Spec class     : {spec_class}")
+        if spec_subclass:
+            survey_lines.append(f"Spec subclass  : {spec_subclass}")
+        if spectype:
+            survey_lines.append(f"Spec type      : {spectype}")
+        if subtype:
+            survey_lines.append(f"Spec subtype   : {subtype}")
+        if survey:
+            survey_lines.append(f"Survey         : {survey}")
+        if program:
+            survey_lines.append(f"Program        : {program}")
+        if release:
+            survey_lines.append(f"Release        : {release}")
+        if survey_lines:
+            lines.append("")
+            lines.append("--- Survey / Class ---")
+            lines.extend(survey_lines)
 
     # --- Raw metadata JSON preview ----------------------------------
     raw = _format_clipboard_json(result)

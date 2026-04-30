@@ -149,17 +149,44 @@ Full walkthrough in
 the coordinate / epoch contract is in
 [`docs/SOLAR_SYSTEM_COORDINATES_AND_EPOCHS.md`](docs/SOLAR_SYSTEM_COORDINATES_AND_EPOCHS.md).
 
-### D. Mixed Gaia + JPL scene
+### D. SDSS / DESI extragalactic path (v0.5)
 
-Run both fetches above, then in C4D **Dataset Manager… → Add
+```bash
+# SDSS — photometry + optional spectro redshifts
+python tools/fetch_sdss_region.py \
+    --ra 180.0 --dec 0.0 --radius-deg 0.5 \
+    --limit 5000 \
+    --output data/catalogs/sdss_region_sample.jsonl \
+    --build-index cache/sdss_region_sample
+
+# DESI — spectroscopic redshifts
+python tools/fetch_desi_region.py \
+    --ra 180.0 --dec 0.0 --radius-deg 0.5 \
+    --limit 5000 \
+    --output data/catalogs/desi_region_sample.jsonl \
+    --build-index cache/desi_region_sample
+```
+
+Both connectors emit galaxies / quasars / stars normalized to
+the UNAV schema with redshift-aware metadata. Full walkthrough
+in [`docs/V0_5_SDSS_DESI_WORKFLOW.md`](docs/V0_5_SDSS_DESI_WORKFLOW.md);
+the redshift→distance contract and limitations are in
+[`docs/REDSHIFT_DISTANCE_LIMITATIONS.md`](docs/REDSHIFT_DISTANCE_LIMITATIONS.md);
+the redshift visual encoding is in
+[`docs/EXTRAGALACTIC_VISUAL_ENCODING.md`](docs/EXTRAGALACTIC_VISUAL_ENCODING.md).
+
+### E. Mixed Gaia + JPL + SDSS + DESI scene
+
+Run all four fetches above, then in C4D **Dataset Manager… → Add
 Dataset** for *each* JSONL (point each entry at its matching
 `cache/...` index), click **Load Active Datasets**, then
-**Create Navigation Null** and **Sync Visible Sector**. Gaia
-stars and JPL bodies coexist by design — uid prefixes (`gaia:`
-vs `jpl:`) and `catalog_source` labels (`Gaia DR3` vs `JPL
-Horizons`) stay disjoint, the visual encoder distinguishes them
-at sight, and the metadata inspector reaches either record
-without ambiguity. Full walkthrough in
+**Create Navigation Null** and **Sync Visible Sector**. The four
+sources coexist by design — connector uid prefixes (`gaia:` /
+`jpl:` / `sdss:` / `desi:`) are disjoint, `catalog_source`
+labels (`Gaia DR3` / `JPL Horizons` / `SDSS` / `DESI`) stay
+distinct in the visual encoder and the metadata inspector, and
+the dataset registry's `<entry.name>:` namespace layers on top.
+Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
 
 ---
@@ -316,7 +343,10 @@ the plugin's package layout is documented in [`docs/PLUGIN_STRUCTURE.md`](docs/P
 * [`docs/GAIA_QUERY_LIMITS_AND_SAFETY.md`](docs/GAIA_QUERY_LIMITS_AND_SAFETY.md) — Gaia caps + safety.
 * [`docs/V0_4_JPL_HORIZONS_WORKFLOW.md`](docs/V0_4_JPL_HORIZONS_WORKFLOW.md) — v0.4 JPL solar-system epoch import.
 * [`docs/SOLAR_SYSTEM_COORDINATES_AND_EPOCHS.md`](docs/SOLAR_SYSTEM_COORDINATES_AND_EPOCHS.md) — heliocentric ICRF + epoch contract.
-* [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md) — Gaia + JPL together in one C4D scene.
+* [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md) — Gaia + JPL + SDSS + DESI together in one C4D scene.
+* [`docs/V0_5_SDSS_DESI_WORKFLOW.md`](docs/V0_5_SDSS_DESI_WORKFLOW.md) — v0.5 SDSS / DESI extragalactic import.
+* [`docs/REDSHIFT_DISTANCE_LIMITATIONS.md`](docs/REDSHIFT_DISTANCE_LIMITATIONS.md) — redshift→distance proxy, when it fires, when it refuses.
+* [`docs/EXTRAGALACTIC_VISUAL_ENCODING.md`](docs/EXTRAGALACTIC_VISUAL_ENCODING.md) — redshift colour mode + extragalactic palette.
 
 Per-feature deep docs:
 [`UNAV_PRO_ARCHITECTURE`](docs/UNAV_PRO_ARCHITECTURE.md) ·
