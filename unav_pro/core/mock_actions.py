@@ -229,7 +229,7 @@ def _filter_for_active_navigator(objects):
     return result.objects, result.stats.short_summary(), True
 
 
-def _stream_for_active_navigator(doc):
+def _stream_for_active_navigator(doc, *, epoch=None):
     """v0.2 sector-streaming entry point.
 
     Resolves the active navigator + the persisted dataset registry,
@@ -270,6 +270,7 @@ def _stream_for_active_navigator(doc):
         origin_c4d=(origin.x, origin.y, origin.z),
         forward=(forward.x, forward.y, forward.z),
         dataset_size_warning=DEFAULT_DATASET_SIZE_WARNING,
+        epoch=epoch,
     )
     frag = stream.short_summary()
     return stream.objects, frag, True, stream
@@ -436,9 +437,14 @@ def sync_visible_sector(
     encoding=None,
     show_debug_cone: bool = False,
     render_mode: Optional[str] = None,
+    epoch=None,
 ) -> str:
     """Update the UNAV_VisibleSector in place — diff-and-update without
     a full clear.
+
+    ``epoch`` (v1.2) propagates the temporal-resolver pass through
+    the streaming layer when set; static datasets pass through
+    unchanged so the v1.1 contract still holds.
 
     Loads the catalog, filters against the active navigator, then
     calls ``core.scene_sync.sync_visible_sector`` which adds newly
@@ -460,7 +466,9 @@ def sync_visible_sector(
         # v0.2 streaming path. When the registry has enabled
         # datasets, only the chunks the cone touches reach the
         # plugin; the rest stays on disk.
-        filtered, frag, used_filter, stream = _stream_for_active_navigator(doc)
+        filtered, frag, used_filter, stream = _stream_for_active_navigator(
+            doc, epoch=epoch,
+        )
         used_streaming = used_filter and stream is not None
         warning_suffix = _format_stream_warnings(stream)
 
@@ -915,3 +923,95 @@ def native_viewer_status() -> str:
         return f"Native viewer: {status.short_summary()}"
 
     return _safe("Native Viewer Status", _do)
+
+
+# ---------------------------------------------------------------------------
+# v1.2 — Time Navigator action handlers
+# ---------------------------------------------------------------------------
+
+
+def time_step_forward(steps: int = 1) -> str:
+    """Advance the singleton time-navigator state by ``steps`` ×
+    ``step_days``. The dialog calls this on the Step Forward
+    button; a fresh ``Sync at Epoch`` click then refreshes the
+    visible sector."""
+
+    def _do() -> str:
+        from core.time_navigator import default_state
+        state = default_state()
+        ep = state.step_forward(steps=int(steps))
+        return f"Time Step (+{steps}): {ep.iso}"
+
+    return _safe("Time Step", _do)
+
+
+def time_step_backward(steps: int = 1) -> str:
+    def _do() -> str:
+        from core.time_navigator import default_state
+        state = default_state()
+        ep = state.step_backward(steps=int(steps))
+        return f"Time Step (-{steps}): {ep.iso}"
+
+    return _safe("Time Step", _do)
+
+
+def set_time_epoch(value) -> str:
+    """Set the singleton epoch from any ``coerce_epoch``-friendly
+    input."""
+
+    def _do() -> str:
+        from core.time_navigator import default_state
+        state = default_state()
+        ep = state.set_epoch(value)
+        return f"Time Epoch: {ep.iso}"
+
+    return _safe("Set Time Epoch", _do)
+
+
+def time_play_pause() -> str:
+    """v1.2 placeholder. Toggles the ``is_playing`` flag and
+    returns a status line — per-frame stepping lands when the
+    v1.x SceneHook ships."""
+
+    def _do() -> str:
+        from core.time_navigator import default_state
+        state = default_state()
+        new_value = state.toggle_play()
+        return (
+            f"Time Play: {'on' if new_value else 'off'} (placeholder; "
+            "per-frame stepping arrives with the v1.x SceneHook)"
+        )
+
+    return _safe("Time Play", _do)
+
+
+def sync_visible_sector_at_epoch(
+    catalog_path: Optional[str] = None,
+    encoding=None,
+    show_debug_cone: bool = False,
+    render_mode: Optional[str] = None,
+) -> str:
+    """v1.2: Sync the visible sector at the current time-navigator
+    epoch. Equivalent to ``sync_visible_sector(...)`` with the
+    singleton's epoch threaded through. Used by the dialog's
+    "Sync at Epoch" button."""
+    from core.time_navigator import default_state
+    state = default_state()
+    return sync_visible_sector(
+        catalog_path=catalog_path,
+        encoding=encoding,
+        show_debug_cone=show_debug_cone,
+        render_mode=render_mode,
+        epoch=state.current_epoch,
+    )
+
+
+def time_navigator_status() -> str:
+    """One-line summary the dialog renders in its Time Navigator
+    strip. Always available; never raises."""
+
+    def _do() -> str:
+        from core.time_navigator import default_state
+        return f"Time Navigator: {default_state().short_summary()}"
+
+    return _safe("Time Navigator Status", _do)

@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS unav_meta (
 );
 
 INSERT OR IGNORE INTO unav_meta (key, value)
-VALUES ('schema_version', '1');
+VALUES ('schema_version', '2');
 
 -- Hot-path row: the ~10 columns the dialog uses for search /
 -- visible-sector candidate selection. Wide enough to skip the
@@ -75,3 +75,45 @@ CREATE INDEX IF NOT EXISTS idx_objects_distance ON objects (distance_parsec);
 -- ``LIKE 'sirius%'`` use the B-tree.
 CREATE INDEX IF NOT EXISTS idx_objects_name_lc ON objects (LOWER(name));
 CREATE INDEX IF NOT EXISTS idx_objects_common_name_lc ON objects (LOWER(common_name));
+
+-- v1.2 — object_states: per-(uid, epoch) rows for objects whose
+-- world-space position depends on time. Two flavours:
+--
+--   * ``state_type = 'proper_motion'`` — a Gaia-style row carrying
+--     pmra / pmdec at a reference epoch. The temporal resolver
+--     extrapolates linearly to the target epoch on read.
+--
+--   * ``state_type = 'ephemeris'`` — a JPL-style row carrying an
+--     explicit (x, y, z) snapshot at a single epoch. Multiple
+--     rows per uid form a time series; the resolver picks the
+--     nearest snapshot or interpolates between two.
+--
+-- Static rows do NOT need a state row; ``objects`` already
+-- carries their position. The resolver treats any uid without
+-- a matching state row as static.
+CREATE TABLE IF NOT EXISTS object_states (
+    uid          TEXT NOT NULL REFERENCES objects(uid) ON DELETE CASCADE,
+    epoch_jd     REAL NOT NULL,
+    state_type   TEXT NOT NULL CHECK (
+        state_type IN ('static', 'proper_motion', 'ephemeris')
+    ),
+    -- Cartesian-pc snapshot (used by ephemeris).
+    x            REAL,
+    y            REAL,
+    z            REAL,
+    -- Velocity AU/day (used by ephemeris when interpolation is desired).
+    vx           REAL,
+    vy           REAL,
+    vz           REAL,
+    -- Reference epoch for proper-motion rows; matches ``epoch_jd``
+    -- when ``state_type = 'proper_motion'`` so a single index
+    -- serves both.
+    reference_epoch_jd REAL,
+    -- Proper-motion components (mas/yr) for proper_motion rows.
+    pmra_masyr   REAL,
+    pmdec_masyr  REAL,
+    PRIMARY KEY (uid, epoch_jd)
+);
+
+CREATE INDEX IF NOT EXISTS idx_object_states_epoch ON object_states (epoch_jd);
+CREATE INDEX IF NOT EXISTS idx_object_states_uid_type ON object_states (uid, state_type);

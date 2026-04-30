@@ -32,10 +32,14 @@ from data.schema import CatalogObject, compute_derived_fields
 
 _log = get_logger("db.db_manager")
 
-#: Schema version the codebase understands. Bumped when a
-#: backwards-incompatible change lands. The DB file's
-#: ``unav_meta.schema_version`` row must match.
-SCHEMA_VERSION: int = 1
+#: Schema version the codebase understands.
+#:
+#:   v1 — v1.1 baseline (objects + metadata + indexes).
+#:   v2 — v1.2 adds the ``object_states`` table.
+#:
+#: ``DBManager.apply_schema()`` migrates a v1 DB to v2 in place
+#: by adding the new table and bumping the row.
+SCHEMA_VERSION: int = 2
 
 #: Path to the bundled DDL.
 SCHEMA_SQL_PATH = os.path.join(
@@ -259,7 +263,13 @@ class DBManager:
     # ---------------------------------------------------- schema
     def apply_schema(self) -> None:
         """Apply the bundled DDL. Idempotent; safe to call on an
-        existing DB."""
+        existing DB.
+
+        v1.2 migration: a v1 DB (objects + metadata only) gets the
+        v2 ``object_states`` table added in place when this method
+        runs against it. The schema_version row is bumped on the
+        same transaction.
+        """
         if not os.path.isfile(SCHEMA_SQL_PATH):
             raise DBError(
                 f"schema sql missing on disk: {SCHEMA_SQL_PATH}"
@@ -268,6 +278,28 @@ class DBManager:
             ddl = fh.read()
         cur = self.conn.cursor()
         cur.executescript(ddl)
+        # Migrate: a pre-existing v1 DB needs its schema_version row
+        # updated. The DDL's ``INSERT OR IGNORE`` won't change a
+        # row that already says '1'.
+        cur.execute(
+            "SELECT value FROM unav_meta WHERE key = 'schema_version'"
+        )
+        row = cur.fetchone()
+        if row is not None and row[0] != str(SCHEMA_VERSION):
+            try:
+                disk_version = int(row[0])
+            except (TypeError, ValueError):
+                disk_version = -1
+            if disk_version < SCHEMA_VERSION:
+                cur.execute(
+                    "UPDATE unav_meta SET value = ? "
+                    "WHERE key = 'schema_version'",
+                    (str(SCHEMA_VERSION),),
+                )
+                _log.info(
+                    "Migrated DB %s: schema_version %d → %d",
+                    self.path, disk_version, SCHEMA_VERSION,
+                )
         self.conn.commit()
         self._validate_schema_version()
 
@@ -560,3 +592,162 @@ def is_unav_db(path: str) -> bool:
             return row is not None and int(row[0]) == SCHEMA_VERSION
     except Exception:  # noqa: BLE001
         return False
+
+
+# ---------------------------------------------------------------------------
+# v1.2 — object_states helpers
+# ---------------------------------------------------------------------------
+
+
+#: Allowed values of ``object_states.state_type``.
+STATE_TYPE_STATIC = "static"
+STATE_TYPE_PROPER_MOTION = "proper_motion"
+STATE_TYPE_EPHEMERIS = "ephemeris"
+STATE_TYPES = (STATE_TYPE_STATIC, STATE_TYPE_PROPER_MOTION, STATE_TYPE_EPHEMERIS)
+
+
+@dataclass
+class ObjectState:
+    """One row of ``object_states``. The ``state_type`` decides
+    which optional columns are populated:
+
+    * ``proper_motion`` — ``pmra_masyr`` / ``pmdec_masyr`` /
+      ``reference_epoch_jd``.
+    * ``ephemeris``     — ``x``/``y``/``z`` in parsec (and
+      optionally ``vx``/``vy``/``vz`` in pc/day for interpolation).
+    * ``static``        — none of the above; reserved for
+      explicit "no temporal model" pins.
+    """
+
+    uid: str
+    epoch_jd: float
+    state_type: str = STATE_TYPE_STATIC
+    x: Optional[float] = None
+    y: Optional[float] = None
+    z: Optional[float] = None
+    vx: Optional[float] = None
+    vy: Optional[float] = None
+    vz: Optional[float] = None
+    reference_epoch_jd: Optional[float] = None
+    pmra_masyr: Optional[float] = None
+    pmdec_masyr: Optional[float] = None
+
+    def __post_init__(self) -> None:
+        if self.state_type not in STATE_TYPES:
+            raise ValueError(
+                f"unknown state_type {self.state_type!r}; "
+                f"valid: {STATE_TYPES}"
+            )
+
+
+_STATE_INSERT_SQL = (
+    "INSERT OR REPLACE INTO object_states "
+    "(uid, epoch_jd, state_type, x, y, z, vx, vy, vz, "
+    " reference_epoch_jd, pmra_masyr, pmdec_masyr) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+)
+
+
+def _state_to_row(state: ObjectState) -> Tuple:
+    return (
+        state.uid,
+        float(state.epoch_jd),
+        str(state.state_type),
+        state.x, state.y, state.z,
+        state.vx, state.vy, state.vz,
+        state.reference_epoch_jd,
+        state.pmra_masyr,
+        state.pmdec_masyr,
+    )
+
+
+def _state_from_row(row) -> ObjectState:
+    return ObjectState(
+        uid=row["uid"],
+        epoch_jd=float(row["epoch_jd"]),
+        state_type=row["state_type"],
+        x=row["x"], y=row["y"], z=row["z"],
+        vx=row["vx"], vy=row["vy"], vz=row["vz"],
+        reference_epoch_jd=row["reference_epoch_jd"],
+        pmra_masyr=row["pmra_masyr"],
+        pmdec_masyr=row["pmdec_masyr"],
+    )
+
+
+def _attach_state_methods() -> None:
+    """Bolt the v1.2 helpers onto ``DBManager``. Defined out of the
+    class body so the v1.1 surface stays readable above; the
+    methods bind below so callers see one unified API."""
+
+    def insert_states(
+        self,
+        states: Sequence[ObjectState],
+    ) -> int:
+        cur = self.conn.cursor()
+        cur.executemany(
+            _STATE_INSERT_SQL, [_state_to_row(s) for s in states],
+        )
+        n = cur.rowcount if cur.rowcount >= 0 else len(states)
+        self.conn.commit()
+        return int(n)
+
+    def fetch_states_for(
+        self, uid: str, *, state_type: Optional[str] = None,
+    ) -> List[ObjectState]:
+        cur = self.conn.cursor()
+        if state_type is None:
+            cur.execute(
+                "SELECT * FROM object_states WHERE uid = ? "
+                "ORDER BY epoch_jd",
+                (uid,),
+            )
+        else:
+            cur.execute(
+                "SELECT * FROM object_states WHERE uid = ? "
+                "AND state_type = ? ORDER BY epoch_jd",
+                (uid, state_type),
+            )
+        return [_state_from_row(r) for r in cur.fetchall()]
+
+    def fetch_states_at_epoch(
+        self,
+        epoch_jd: float,
+        *,
+        state_type: Optional[str] = None,
+        tolerance_days: float = 0.5,
+    ) -> List[ObjectState]:
+        """Return the ``object_states`` rows whose ``epoch_jd``
+        falls inside ``[epoch_jd - tolerance, epoch_jd + tolerance]``.
+        Used by the ephemeris resolver to find the nearest
+        snapshot for each uid."""
+        cur = self.conn.cursor()
+        lo = float(epoch_jd) - float(tolerance_days)
+        hi = float(epoch_jd) + float(tolerance_days)
+        if state_type is None:
+            cur.execute(
+                "SELECT * FROM object_states "
+                "WHERE epoch_jd BETWEEN ? AND ? "
+                "ORDER BY uid, epoch_jd",
+                (lo, hi),
+            )
+        else:
+            cur.execute(
+                "SELECT * FROM object_states "
+                "WHERE epoch_jd BETWEEN ? AND ? AND state_type = ? "
+                "ORDER BY uid, epoch_jd",
+                (lo, hi, state_type),
+            )
+        return [_state_from_row(r) for r in cur.fetchall()]
+
+    def state_count(self) -> int:
+        cur = self.conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM object_states")
+        return int(cur.fetchone()[0])
+
+    DBManager.insert_states = insert_states  # type: ignore[attr-defined]
+    DBManager.fetch_states_for = fetch_states_for  # type: ignore[attr-defined]
+    DBManager.fetch_states_at_epoch = fetch_states_at_epoch  # type: ignore[attr-defined]
+    DBManager.state_count = state_count  # type: ignore[attr-defined]
+
+
+_attach_state_methods()

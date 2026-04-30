@@ -67,16 +67,21 @@ MAGIC_END: bytes = b"UEND"
 #:        is unchanged.
 FORMAT_VERSION_V1: int = 1
 FORMAT_VERSION_V2: int = 2
+#: v1.2 — adds an explicit ``epoch_jd`` and ``state_mode`` field
+#: at the tail of the v2 extra-header block. The native loader
+#: parses the extra 16 bytes after the v2 fields when
+#: ``version == 3``.
+FORMAT_VERSION_V3: int = 3
 
 #: Format version emitted by ``write_visible_sector(...)`` when the
 #: caller does not request a specific version. v1.0 keeps the
 #: default at v1 so existing callers (the v0.8 CLI, v0.9 native
 #: viewer) get bit-for-bit identical output. New callers that
-#: want the v2 features pass ``format_version=FORMAT_VERSION_V2``
-#: explicitly.
+#: want the v2 / v3 features pass ``format_version=FORMAT_VERSION_V2``
+#: or ``FORMAT_VERSION_V3`` explicitly.
 FORMAT_VERSION: int = FORMAT_VERSION_V1
 SUPPORTED_FORMAT_VERSIONS: Tuple[int, ...] = (
-    FORMAT_VERSION_V1, FORMAT_VERSION_V2,
+    FORMAT_VERSION_V1, FORMAT_VERSION_V2, FORMAT_VERSION_V3,
 )
 
 #: Header struct format (excluding the optional metadata-sidecar
@@ -140,6 +145,26 @@ FOOTER_SIZE: int = struct.calcsize(_FOOTER_FMT)
 #:   float64 aabb_max_x, y, z                   (parsec)
 _V2_EXTRA_HEADER_FMT = "<II3d4d3d3d"
 V2_EXTRA_HEADER_SIZE: int = struct.calcsize(_V2_EXTRA_HEADER_FMT)
+
+#: v3 extras append to the v2 layout:
+#:
+#:   float64 epoch_jd        — Julian Date the file was rendered for
+#:   uint8   state_mode      — 0=static, 1=proper_motion, 2=ephemeris,
+#:                              3=mixed (the default for the resolver)
+#:   bytes   pad[7]          — reserved for forward-compatibility
+_V3_EXTRA_TAIL_FMT = "<dB7s"
+V3_EXTRA_TAIL_SIZE: int = struct.calcsize(_V3_EXTRA_TAIL_FMT)
+V3_EXTRA_HEADER_SIZE: int = V2_EXTRA_HEADER_SIZE + V3_EXTRA_TAIL_SIZE  # 128
+
+#: ``state_mode`` values stable since v1.2.
+STATE_MODE_STATIC = 0
+STATE_MODE_PROPER_MOTION = 1
+STATE_MODE_EPHEMERIS = 2
+STATE_MODE_MIXED = 3
+STATE_MODES = (
+    STATE_MODE_STATIC, STATE_MODE_PROPER_MOTION,
+    STATE_MODE_EPHEMERIS, STATE_MODE_MIXED,
+)
 
 #: ``renderer_flags`` bit values. Stable since v1.0.
 RENDERER_FLAG_POINTS_RELATIVE_TO_SECTOR_ORIGIN = 1 << 0  # camera-rel coords
@@ -217,12 +242,13 @@ class UnavBinaryPoint:
 
 @dataclass
 class BinaryV2Extras:
-    """v2 extra-header block.
+    """v2 / v3 extra-header block.
 
-    Only meaningful when the file's ``version`` is
-    ``FORMAT_VERSION_V2``. v1 readers ignore this block; v2 readers
-    parse it. The fields are documented in
-    ``docs/BINARY_VISIBLE_SECTOR_FORMAT.md`` §4 and §5.
+    The first 112 bytes are the v2 layout (renderer flags +
+    visual encoding id + sector origin + bounding sphere + AABB).
+    v3 appends 16 more bytes (``epoch_jd`` + ``state_mode`` + 7
+    reserved bytes) — those fields are populated only when the
+    file is v3.
     """
 
     renderer_flags: int = 0
@@ -231,6 +257,9 @@ class BinaryV2Extras:
     bounding_sphere: Tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
     aabb_min: Tuple[float, float, float] = (0.0, 0.0, 0.0)
     aabb_max: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+    # v1.2 / v3 additions.
+    epoch_jd: float = 0.0
+    state_mode: int = STATE_MODE_STATIC
 
 
 @dataclass
@@ -253,7 +282,16 @@ class BinaryHeader:
     v2_extras: Optional[BinaryV2Extras] = None
 
     def has_v2_extras(self) -> bool:
-        return self.version == FORMAT_VERSION_V2 and self.v2_extras is not None
+        return (
+            self.version in (FORMAT_VERSION_V2, FORMAT_VERSION_V3)
+            and self.v2_extras is not None
+        )
+
+    def has_v3_extras(self) -> bool:
+        return (
+            self.version == FORMAT_VERSION_V3
+            and self.v2_extras is not None
+        )
 
 
 @dataclass
@@ -364,8 +402,8 @@ def build_source_table(
 # ---------------------------------------------------------------------------
 
 
-def _pack_v2_extras(extras: BinaryV2Extras) -> bytes:
-    return struct.pack(
+def _pack_v2_extras(extras: BinaryV2Extras, *, with_v3_tail: bool = False) -> bytes:
+    head = struct.pack(
         _V2_EXTRA_HEADER_FMT,
         int(extras.renderer_flags) & 0xFFFFFFFF,
         int(extras.visual_encoding_id) & 0xFFFFFFFF,
@@ -383,26 +421,43 @@ def _pack_v2_extras(extras: BinaryV2Extras) -> bytes:
         float(extras.aabb_max[1]),
         float(extras.aabb_max[2]),
     )
-
-
-def _unpack_v2_extras(raw: bytes) -> BinaryV2Extras:
-    if len(raw) != V2_EXTRA_HEADER_SIZE:
-        raise BinaryExportError(
-            f"v2 extras block size {len(raw)} != "
-            f"expected {V2_EXTRA_HEADER_SIZE}"
-        )
-    fields = struct.unpack(_V2_EXTRA_HEADER_FMT, raw)
-    return BinaryV2Extras(
-        renderer_flags=int(fields[0]),
-        visual_encoding_id=int(fields[1]),
-        sector_origin=(float(fields[2]), float(fields[3]), float(fields[4])),
-        bounding_sphere=(
-            float(fields[5]), float(fields[6]),
-            float(fields[7]), float(fields[8]),
-        ),
-        aabb_min=(float(fields[9]), float(fields[10]), float(fields[11])),
-        aabb_max=(float(fields[12]), float(fields[13]), float(fields[14])),
+    if not with_v3_tail:
+        return head
+    tail = struct.pack(
+        _V3_EXTRA_TAIL_FMT,
+        float(extras.epoch_jd),
+        int(extras.state_mode) & 0xFF,
+        b"\x00" * 7,
     )
+    return head + tail
+
+
+def _unpack_v2_extras(raw: bytes, *, with_v3_tail: bool = False) -> BinaryV2Extras:
+    expected = V3_EXTRA_HEADER_SIZE if with_v3_tail else V2_EXTRA_HEADER_SIZE
+    if len(raw) != expected:
+        raise BinaryExportError(
+            f"v2/v3 extras block size {len(raw)} != "
+            f"expected {expected}"
+        )
+    head_fields = struct.unpack(_V2_EXTRA_HEADER_FMT, raw[:V2_EXTRA_HEADER_SIZE])
+    extras = BinaryV2Extras(
+        renderer_flags=int(head_fields[0]),
+        visual_encoding_id=int(head_fields[1]),
+        sector_origin=(float(head_fields[2]), float(head_fields[3]), float(head_fields[4])),
+        bounding_sphere=(
+            float(head_fields[5]), float(head_fields[6]),
+            float(head_fields[7]), float(head_fields[8]),
+        ),
+        aabb_min=(float(head_fields[9]), float(head_fields[10]), float(head_fields[11])),
+        aabb_max=(float(head_fields[12]), float(head_fields[13]), float(head_fields[14])),
+    )
+    if with_v3_tail:
+        epoch_jd, state_mode, _pad = struct.unpack(
+            _V3_EXTRA_TAIL_FMT, raw[V2_EXTRA_HEADER_SIZE:],
+        )
+        extras.epoch_jd = float(epoch_jd)
+        extras.state_mode = int(state_mode)
+    return extras
 
 
 def _pack_header(header: BinaryHeader) -> bytes:
@@ -411,7 +466,11 @@ def _pack_header(header: BinaryHeader) -> bytes:
     extra_len = int(header.header_extra_bytes) & 0xFFFFFFFF
     if header.version == FORMAT_VERSION_V2:
         extras = header.v2_extras or BinaryV2Extras()
-        extras_bytes = _pack_v2_extras(extras)
+        extras_bytes = _pack_v2_extras(extras, with_v3_tail=False)
+        extra_len = len(extras_bytes)
+    elif header.version == FORMAT_VERSION_V3:
+        extras = header.v2_extras or BinaryV2Extras()
+        extras_bytes = _pack_v2_extras(extras, with_v3_tail=True)
         extra_len = len(extras_bytes)
     fixed = struct.pack(
         _HEADER_FMT,
@@ -480,10 +539,17 @@ def write_visible_sector(
         os.makedirs(parent, exist_ok=True)
 
     extras = v2_extras
-    if format_version == FORMAT_VERSION_V2 and extras is None:
-        # Caller asked for v2 without giving us extras — fill with
-        # zeros so the file is still well-formed.
+    if format_version in (FORMAT_VERSION_V2, FORMAT_VERSION_V3) and extras is None:
+        # Caller asked for v2/v3 without giving us extras — fill
+        # with zeros so the file is still well-formed.
         extras = BinaryV2Extras()
+
+    if format_version == FORMAT_VERSION_V3:
+        header_extra_bytes = V3_EXTRA_HEADER_SIZE
+    elif format_version == FORMAT_VERSION_V2:
+        header_extra_bytes = V2_EXTRA_HEADER_SIZE
+    else:
+        header_extra_bytes = 0
 
     header = BinaryHeader(
         magic=MAGIC,
@@ -492,9 +558,7 @@ def write_visible_sector(
         coordinate_scale_factor=float(coordinate_scale_factor),
         point_count=len(points),
         source_count=len(sources),
-        header_extra_bytes=(
-            V2_EXTRA_HEADER_SIZE if format_version == FORMAT_VERSION_V2 else 0
-        ),
+        header_extra_bytes=header_extra_bytes,
         sidecar_path=sidecar_path or "",
         v2_extras=extras,
     )
@@ -555,7 +619,19 @@ def _unpack_header(raw: bytes) -> Tuple[BinaryHeader, int]:
 
     extras: Optional[BinaryV2Extras] = None
     extras_end = sidecar_end
-    if int(version) == FORMAT_VERSION_V2:
+    if int(version) == FORMAT_VERSION_V3:
+        if int(header_extra_bytes) != V3_EXTRA_HEADER_SIZE:
+            raise BinaryExportError(
+                f"v3 header_extra_bytes is {header_extra_bytes}; "
+                f"expected {V3_EXTRA_HEADER_SIZE}"
+            )
+        extras_end = sidecar_end + V3_EXTRA_HEADER_SIZE
+        if extras_end > len(raw):
+            raise BinaryExportError("v3 extras block overruns file")
+        extras = _unpack_v2_extras(
+            raw[sidecar_end:extras_end], with_v3_tail=True,
+        )
+    elif int(version) == FORMAT_VERSION_V2:
         if int(header_extra_bytes) != V2_EXTRA_HEADER_SIZE:
             raise BinaryExportError(
                 f"v2 header_extra_bytes is {header_extra_bytes}; "
@@ -571,7 +647,7 @@ def _unpack_header(raw: bytes) -> Tuple[BinaryHeader, int]:
             # slot — see BINARY_VISIBLE_SECTOR_FORMAT.md §3.3.
             raise BinaryExportError(
                 "v1 header has non-zero header_extra_bytes; "
-                "use the v2 reader for that file"
+                "use the v2/v3 reader for that file"
             )
     return (
         BinaryHeader(
@@ -785,6 +861,8 @@ def export_objects(
     sector_origin: Optional[Tuple[float, float, float]] = None,
     camera_relative: bool = False,
     renderer_flags: int = 0,
+    epoch_jd: float = 0.0,
+    state_mode: int = STATE_MODE_STATIC,
 ) -> Tuple[int, BinaryHeader, List[Tuple[int, str]]]:
     """Convenience: convert a sequence of ``CatalogObject`` into
     binary points and write them. Returns
@@ -825,7 +903,7 @@ def export_objects(
 
     extras: Optional[BinaryV2Extras] = None
     points_to_write = list(points)
-    if format_version == FORMAT_VERSION_V2:
+    if format_version in (FORMAT_VERSION_V2, FORMAT_VERSION_V3):
         extras = make_v2_extras(
             points,
             visual_encoding_id=visual_encoding_id,
@@ -839,6 +917,9 @@ def export_objects(
             points_to_write = make_relative_points(
                 points, extras.sector_origin,
             )
+        if format_version == FORMAT_VERSION_V3:
+            extras.epoch_jd = float(epoch_jd)
+            extras.state_mode = int(state_mode)
 
     bytes_written = write_visible_sector(
         path, points_to_write,
@@ -848,16 +929,19 @@ def export_objects(
         format_version=format_version,
         v2_extras=extras,
     )
+    if format_version == FORMAT_VERSION_V3:
+        header_extra = V3_EXTRA_HEADER_SIZE
+    elif format_version == FORMAT_VERSION_V2:
+        header_extra = V2_EXTRA_HEADER_SIZE
+    else:
+        header_extra = 0
     header = BinaryHeader(
         version=format_version,
         flags=0,
         coordinate_scale_factor=float(scale_factor),
         point_count=len(points_to_write),
         source_count=len(sources),
-        header_extra_bytes=(
-            V2_EXTRA_HEADER_SIZE
-            if format_version == FORMAT_VERSION_V2 else 0
-        ),
+        header_extra_bytes=header_extra,
         sidecar_path=sidecar_path or "",
         v2_extras=extras,
     )

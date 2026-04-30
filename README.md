@@ -189,6 +189,41 @@ the dataset registry's `<entry.name>:` namespace layers on top.
 Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
 
+### J. Time Navigator (v1.2)
+
+v1.2 makes UNAV epoch-aware. Every position carries the time it
+is valid for; the user can step that time forward and backward
+to watch the scene evolve. Gaia stars with non-zero proper
+motion drift across the sky; JPL planets fetched as multi-epoch
+time series translate between snapshots.
+
+```bash
+# Fetch a 2026 weekly sweep of the inner planets into the DB.
+python tools/fetch_jpl_solar_system.py \
+    --start "2026-01-01T00:00:00" \
+    --end   "2026-12-31T00:00:00" \
+    --step-days 7 \
+    --bodies "Mercury,Venus,Earth,Mars,Jupiter,Saturn,Uranus,Neptune" \
+    --output data/catalogs/jpl_2026_weekly.jsonl \
+    --db     data/unav.db
+```
+
+Then in C4D: open the **Time Navigator** panel (right side of
+the main dialog), set an epoch (ISO datetime, JD, Jyear, or a
+named anchor like ``J2016.0``), and click **<** / **>** to step.
+**Sync at epoch** re-runs the visible sector for every active
+dataset at the current time.
+
+Walkthroughs:
+[`docs/V1_2_TIME_NAVIGATION.md`](docs/V1_2_TIME_NAVIGATION.md) —
+milestone summary,
+[`docs/EPOCHS_AND_JULIAN_DATES.md`](docs/EPOCHS_AND_JULIAN_DATES.md)
+— time model,
+[`docs/GAIA_PROPER_MOTION_LIMITATIONS.md`](docs/GAIA_PROPER_MOTION_LIMITATIONS.md)
+— what the linear propagation does (and does not) approximate,
+[`docs/JPL_TIME_SERIES_WORKFLOW.md`](docs/JPL_TIME_SERIES_WORKFLOW.md)
+— multi-epoch ephemeris fetch + DB ingest.
+
 ### I. SQL-backed query engine (v1.1)
 
 v1.1 turns UNAV from a viewer into a query engine. Catalogs
@@ -493,6 +528,10 @@ the plugin's package layout is documented in [`docs/PLUGIN_STRUCTURE.md`](docs/P
 * [`docs/SQL_SCHEMA.md`](docs/SQL_SCHEMA.md) — schema + indexes reference.
 * [`docs/SPATIAL_QUERY_STRATEGY.md`](docs/SPATIAL_QUERY_STRATEGY.md) — bbox prefilter + exact cone refine.
 * [`docs/DB_IMPORT_WORKFLOW.md`](docs/DB_IMPORT_WORKFLOW.md) — JSONL → SQLite importer CLI.
+* [`docs/V1_2_TIME_NAVIGATION.md`](docs/V1_2_TIME_NAVIGATION.md) — v1.2 milestone summary: epoch-aware positions, proper motion, ephemeris states, Time Navigator dialog.
+* [`docs/EPOCHS_AND_JULIAN_DATES.md`](docs/EPOCHS_AND_JULIAN_DATES.md) — the v1.2 time model (ISO ↔ JD ↔ Jyear, named epochs, ``coerce_epoch``).
+* [`docs/GAIA_PROPER_MOTION_LIMITATIONS.md`](docs/GAIA_PROPER_MOTION_LIMITATIONS.md) — what the linear ICRS propagation does and does not approximate.
+* [`docs/JPL_TIME_SERIES_WORKFLOW.md`](docs/JPL_TIME_SERIES_WORKFLOW.md) — multi-epoch JPL Horizons fetch into the v1.2 ``object_states`` table.
 
 Per-feature deep docs:
 [`UNAV_PRO_ARCHITECTURE`](docs/UNAV_PRO_ARCHITECTURE.md) ·
@@ -569,7 +608,16 @@ the per-milestone phasing is in
   pagination + timing; the visible-sector pipeline pulls from
   the DB via a bbox-prefilter + exact-cone-refine path; the
   Native Viewer keeps drawing the same v2 binary file. JSONL
-  remains first-class. **968 Python tests + 30 C++ tests pass.**
+  remains first-class.
+* **v1.2** makes UNAV epoch-aware. ``core/time_model.py``
+  centralises ISO ↔ JD ↔ Jyear conversions; the SQLite schema
+  bumps to v2 with a new ``object_states`` time-series table;
+  Gaia stars propagate via linear ICRS great-circle
+  approximation; JPL bodies land as multi-epoch ``ephemeris``
+  rows; the Time Navigator dialog panel lets the artist scrub
+  the scene's epoch; the visible-sector binary export gains a
+  v3 layout with ``epoch_jd`` + ``state_mode`` in the header.
+  **1053 Python tests pass.**
 
 ### Current limitations
 
@@ -592,11 +640,11 @@ the per-milestone phasing is in
 
 ### Next step
 
-* **v1.2** — `BaseDraw::DrawArrayWithVertexBuffer` swap inside
+* **v1.x** — `BaseDraw::DrawArrayWithVertexBuffer` swap inside
   `SdkRenderer::drawImpl` (and the corresponding `uploadImpl`
   flip), `BaseDraw::PickObject` integration for pixel-accurate
   selection, an FTS5-backed name search, and a SceneHook that
-  polls the request file per redraw for live Auto Sync. The
-  v1.1 SQL surface stays unchanged behind the DB-backed
-  search and visible-sector paths; the v1.0 buffer / renderer
-  / bridge contracts stay unchanged behind the native renderer.
+  polls the request file per redraw for live Auto Sync — which
+  also unlocks the per-frame play sweep the v1.2 Time Navigator
+  panel has wired but parked. The v1.2 epoch model + DB schema
+  v2 + binary v3 stay unchanged behind the GPU / picking work.

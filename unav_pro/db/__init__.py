@@ -23,7 +23,12 @@ from .db_manager import (  # noqa: F401
     DBError,
     DBManager,
     DBStats,
+    ObjectState,
     SCHEMA_VERSION,
+    STATE_TYPES,
+    STATE_TYPE_EPHEMERIS,
+    STATE_TYPE_PROPER_MOTION,
+    STATE_TYPE_STATIC,
     iter_jsonl,
 )
 from .query_builder import (  # noqa: F401

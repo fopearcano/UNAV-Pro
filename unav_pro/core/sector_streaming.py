@@ -153,6 +153,7 @@ def stream_sector_for_dataset(
     *,
     dataset_size_warning: int = DEFAULT_DATASET_SIZE_WARNING,
     hard_full_load_ceiling: int = HARD_FULL_LOAD_CEILING,
+    epoch=None,
 ) -> DatasetStreamResult:
     """Return the visible-sector candidates from ``entry`` under
     ``params`` + the navigator's pose.
@@ -198,9 +199,12 @@ def stream_sector_for_dataset(
             _log.exception("Stream %s: db import failed", entry.name)
             return out
         try:
+            # v1.1 used read_only; v1.2 keeps the DB read-only here
+            # because the resolver only fetches state rows. Native
+            # writes happen elsewhere (importer / time-series CLI).
             with DBManager(entry.db_path or "", read_only=True) as db:
                 cone = query_cone_for_navigator(
-                    db, params, origin_pc, forward,
+                    db, params, origin_pc, forward, epoch=epoch,
                 )
         except Exception as exc:  # noqa: BLE001 — boundary
             out.error = f"db cone query failed: {exc!r}"
@@ -303,6 +307,7 @@ def stream_sector_for_active_datasets(
     *,
     global_cap: Optional[int] = None,
     dataset_size_warning: int = DEFAULT_DATASET_SIZE_WARNING,
+    epoch=None,
 ) -> StreamResult:
     """Aggregate streamed candidates across every enabled dataset.
 
@@ -321,6 +326,7 @@ def stream_sector_for_active_datasets(
         per = stream_sector_for_dataset(
             entry, params, origin_c4d, forward,
             dataset_size_warning=dataset_size_warning,
+            epoch=epoch,
         )
         merged.per_dataset.append(per)
         if per.candidate_objects is not None:

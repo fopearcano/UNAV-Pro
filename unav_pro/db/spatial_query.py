@@ -244,6 +244,8 @@ def query_cone(
     max_visible_objects: Optional[int] = None,
     bbox_pad_pc: float = 0.0,
     bbox_max_rows: Optional[int] = None,
+    epoch=None,
+    interpolate_ephemeris: bool = True,
 ) -> ConeQueryResult:
     """Two-step cone query: bbox prefilter via SQL, exact refine
     via ``core.spatial_filter.apply_filter``.
@@ -270,9 +272,53 @@ def query_cone(
         selected_types=selected_types,
         max_rows=bbox_max_rows,
     )
+    candidates = bbox.objects
+    # v1.2: when an epoch is supplied, resolve every candidate's
+    # position before the exact cone refine. Static rows pass
+    # through unchanged; proper-motion rows propagate; ephemeris
+    # rows snap to the nearest snapshot in object_states.
+    if epoch is not None:
+        from core.time_model import coerce_epoch
+        from core.temporal_resolver import (
+            EphemerisStore, ProperMotionStore, resolve_for_epoch,
+        )
+        ep = coerce_epoch(epoch)
+        if ep is not None and candidates:
+            uids = [o.uid for o in candidates if o.uid]
+            states_for_uids = []
+            if uids:
+                try:
+                    states_for_uids = list(
+                        _fetch_states_in(db, uids),
+                    )
+                except Exception:  # noqa: BLE001
+                    states_for_uids = []
+            eph = EphemerisStore()
+            pm = ProperMotionStore()
+            for s in states_for_uids:
+                if s.state_type == "ephemeris":
+                    eph.add(s)
+                elif s.state_type == "proper_motion":
+                    if s.pmra_masyr is None or s.pmdec_masyr is None:
+                        continue
+                    ref_jd = s.reference_epoch_jd
+                    if ref_jd is None:
+                        ref_jd = s.epoch_jd
+                    pm.add(
+                        s.uid,
+                        pmra_masyr=float(s.pmra_masyr),
+                        pmdec_masyr=float(s.pmdec_masyr),
+                        reference_epoch_jd=float(ref_jd),
+                    )
+            candidates, _stats = resolve_for_epoch(
+                candidates, ep,
+                ephemeris=eph, proper_motions=pm,
+                interpolate=interpolate_ephemeris,
+                in_place=True, recompute_cartesian=True,
+            )
     t0 = time.monotonic()
     refined = apply_filter(
-        bbox.objects,
+        candidates,
         origin_pc=origin_pc,
         forward=forward,
         near_clip_pc=near_pc,
@@ -296,6 +342,28 @@ def query_cone(
     )
 
 
+def _fetch_states_in(db: DBManager, uids: Sequence[str]):
+    """Load ``object_states`` rows for any uids in the candidate
+    set. Chunks the IN clause to stay under SQLite's parameter
+    limit."""
+    if not uids:
+        return []
+    out = []
+    chunk = 500
+    for i in range(0, len(uids), chunk):
+        batch = uids[i:i + chunk]
+        placeholders = ",".join("?" for _ in batch)
+        cur = db.execute(
+            f"SELECT * FROM object_states WHERE uid IN ({placeholders}) "
+            f"ORDER BY uid, epoch_jd",
+            tuple(batch),
+        )
+        from .db_manager import _state_from_row  # late import; circular-safe
+        for row in cur.fetchall():
+            out.append(_state_from_row(row))
+    return out
+
+
 def query_cone_for_navigator(
     db: DBManager,
     params: NavigationParams,
@@ -303,10 +371,17 @@ def query_cone_for_navigator(
     forward: Vec3,
     *,
     bbox_max_rows: Optional[int] = None,
+    epoch=None,
+    interpolate_ephemeris: bool = True,
 ) -> ConeQueryResult:
     """Convenience wrapper that pulls cone parameters off a
     ``NavigationParams`` instance — the shape ``mock_actions`` /
-    ``sector_streaming`` already speak."""
+    ``sector_streaming`` already speak.
+
+    v1.2: ``epoch`` propagates into the temporal resolver so
+    proper-motion stars land at the right RA/Dec and JPL bodies
+    pick the matching ephemeris row.
+    """
     sources = (
         list(params.selected_catalog_sources)
         if params.selected_catalog_sources else None
@@ -324,4 +399,6 @@ def query_cone_for_navigator(
         selected_sources=sources,
         max_visible_objects=cap,
         bbox_max_rows=bbox_max_rows,
+        epoch=epoch,
+        interpolate_ephemeris=interpolate_ephemeris,
     )

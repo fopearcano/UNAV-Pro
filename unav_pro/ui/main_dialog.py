@@ -83,6 +83,17 @@ _ID_BTN_NATIVE_RELOAD = 9302
 _ID_BTN_NATIVE_TOGGLE = 9303
 _ID_NATIVE_STATUS = 9304
 
+# v1.2 — Time Navigator panel.
+_ID_GROUP_TIME = 9500
+_ID_TIME_EPOCH_INPUT = 9501
+_ID_BTN_TIME_SET = 9502
+_ID_BTN_TIME_BACK = 9503
+_ID_BTN_TIME_FWD = 9504
+_ID_BTN_TIME_PLAY = 9505
+_ID_BTN_TIME_SYNC = 9506
+_ID_NUM_TIME_STEP = 9507
+_ID_TIME_STATUS = 9508
+
 # v0.6 — UX layer: search, bookmarks, navigation controller.
 _ID_GROUP_TABS = 10000
 _ID_TAB_SEARCH = 10100
@@ -242,6 +253,48 @@ if _C4D_AVAILABLE:
             self.AddStaticText(
                 _ID_NATIVE_STATUS, c4d.BFH_SCALEFIT,
                 name="(native viewer: not loaded)",
+            )
+            self.GroupEnd()
+
+            # v1.2 — Time Navigator. Holds the current epoch +
+            # step controls. The "Sync at Epoch" button calls
+            # ``mock_actions.sync_visible_sector_at_epoch``.
+            self.GroupBegin(
+                _ID_GROUP_TIME, c4d.BFH_SCALEFIT, cols=4, rows=3,
+                title="Time Navigator",
+            )
+            self.GroupBorderSpace(8, 8, 8, 8)
+            self.AddStaticText(0, c4d.BFH_LEFT, name="Epoch")
+            self.AddEditText(
+                _ID_TIME_EPOCH_INPUT, c4d.BFH_SCALEFIT,
+            )
+            self.AddButton(
+                _ID_BTN_TIME_SET, c4d.BFH_SCALEFIT, name="Set Epoch",
+            )
+            self.AddButton(
+                _ID_BTN_TIME_PLAY, c4d.BFH_SCALEFIT, name="▶︎ Play / Pause",
+            )
+            self.AddButton(
+                _ID_BTN_TIME_BACK, c4d.BFH_SCALEFIT, name="◀︎ Step Backward",
+            )
+            self.AddButton(
+                _ID_BTN_TIME_FWD, c4d.BFH_SCALEFIT, name="Step Forward ▶︎",
+            )
+            self.AddStaticText(0, c4d.BFH_LEFT, name="Step (days)")
+            self.AddEditNumberArrows(
+                _ID_NUM_TIME_STEP, c4d.BFH_SCALEFIT,
+            )
+            self.SetFloat(
+                _ID_NUM_TIME_STEP, 1.0,
+                min=1.0e-6, max=1.0e6, step=1.0,
+            )
+            self.AddButton(
+                _ID_BTN_TIME_SYNC, c4d.BFH_SCALEFIT,
+                name="Sync at Epoch",
+            )
+            self.AddStaticText(
+                _ID_TIME_STATUS, c4d.BFH_SCALEFIT,
+                name="(time navigator: at default epoch)",
             )
             self.GroupEnd()
 
@@ -487,6 +540,11 @@ if _C4D_AVAILABLE:
                 self._refresh_native_status()
             except Exception:  # noqa: BLE001
                 pass
+            # v1.2 — surface the time-navigator state.
+            try:
+                self._refresh_time_status()
+            except Exception:  # noqa: BLE001
+                pass
             return True
 
         def _refresh_workflow_hint(self) -> None:
@@ -573,6 +631,27 @@ if _C4D_AVAILABLE:
                     self._refresh_native_status()
                 elif mid == _ID_BTN_NATIVE_TOGGLE:
                     self._do_toggle_native_viewer_mode()
+                elif mid == _ID_BTN_TIME_SET:
+                    self._do_time_set_epoch()
+                elif mid == _ID_BTN_TIME_BACK:
+                    self._do_time_step(-1)
+                elif mid == _ID_BTN_TIME_FWD:
+                    self._do_time_step(+1)
+                elif mid == _ID_BTN_TIME_PLAY:
+                    self._append_log(mock_actions.time_play_pause())
+                    self._refresh_time_status()
+                elif mid == _ID_BTN_TIME_SYNC:
+                    self._append_log(
+                        mock_actions.sync_visible_sector_at_epoch(
+                            encoding=self._read_encoding(),
+                            show_debug_cone=bool(
+                                self.GetBool(_ID_CHK_DEBUG_CONE)
+                            ),
+                            render_mode=self._read_render_mode(),
+                        )
+                    )
+                    self._refresh_render_stats()
+                    self._refresh_time_status()
                 elif mid == _ID_CHK_AUTO_SYNC:
                     self._append_log(
                         "Auto Sync: not yet implemented; "
@@ -805,6 +884,67 @@ if _C4D_AVAILABLE:
                 mock_actions.native_viewer_status()
             )
             self._refresh_native_status()
+
+        # --- v1.2 Time Navigator helpers ---------------------------
+
+        def _refresh_time_status(self) -> None:
+            try:
+                from core.time_navigator import default_state
+                state = default_state()
+                # Mirror the active epoch into the input field so
+                # "Set Epoch" round-trips and the user sees what
+                # they're editing.
+                try:
+                    self.SetString(_ID_TIME_EPOCH_INPUT, state.current_iso)
+                except Exception:  # noqa: BLE001
+                    pass
+                try:
+                    self.SetFloat(_ID_NUM_TIME_STEP, float(state.step_days))
+                except Exception:  # noqa: BLE001
+                    pass
+                self.SetString(
+                    _ID_TIME_STATUS,
+                    f"Time: {state.short_summary()}",
+                )
+            except Exception:  # noqa: BLE001 — UI boundary
+                self.SetString(
+                    _ID_TIME_STATUS,
+                    "(time navigator: error)",
+                )
+
+        def _do_time_set_epoch(self) -> None:
+            text = self.GetString(_ID_TIME_EPOCH_INPUT) or ""
+            try:
+                step = float(self.GetFloat(_ID_NUM_TIME_STEP))
+            except Exception:  # noqa: BLE001
+                step = 1.0
+            from core.time_navigator import default_state
+            state = default_state()
+            try:
+                state.set_step_days(step)
+            except Exception as exc:  # noqa: BLE001
+                self._append_log(f"Time Step: {exc}")
+            if text:
+                self._append_log(mock_actions.set_time_epoch(text))
+            self._refresh_time_status()
+
+        def _do_time_step(self, direction: int) -> None:
+            try:
+                step = float(self.GetFloat(_ID_NUM_TIME_STEP))
+            except Exception:  # noqa: BLE001
+                step = 1.0
+            from core.time_navigator import default_state
+            state = default_state()
+            try:
+                state.set_step_days(step)
+            except Exception as exc:  # noqa: BLE001
+                self._append_log(f"Time Step: {exc}")
+                return
+            if direction >= 0:
+                self._append_log(mock_actions.time_step_forward(steps=1))
+            else:
+                self._append_log(mock_actions.time_step_backward(steps=1))
+            self._refresh_time_status()
 
         # --- Route panel handlers ----------------------------------
 
