@@ -18,6 +18,8 @@ except ImportError:  # pragma: no cover — only true outside C4D
     gui = None  # type: ignore
     _C4D_AVAILABLE = False
 
+from typing import Optional
+
 from core import mock_actions
 from core.logging_util import get_logger
 
@@ -162,6 +164,14 @@ _ID_BTN_ANIM_PREVIEW_FRAME = 10543
 _ID_BTN_ANIM_SYNC_AT_FRAME = 10544
 _ID_ANIM_PREVIEW_FRAME = 10545
 _ID_ANIM_FOV_DEG = 10546
+
+# v2.3 export pipeline controls.
+_ID_BTN_EXP_MISSION = 10550
+_ID_BTN_EXP_ROUTE = 10551
+_ID_BTN_EXP_CAMERA_PATH = 10552
+_ID_BTN_EXP_TIMELINE = 10553
+_ID_BTN_EXP_PACKAGE = 10554
+_ID_BTN_EXP_DATASET_SUMMARY = 10555
 
 _ID_BAKE_START_FRAME = 10460
 _ID_BAKE_END_FRAME = 10461
@@ -708,6 +718,19 @@ if _C4D_AVAILABLE:
             self.AddButton(_ID_BTN_ANIM_SYNC_AT_FRAME, c4d.BFH_SCALEFIT, name="Sync Visible Sector at Frame")
             self.GroupEnd()
 
+            # v2.3 export-pipelines row.
+            self.AddStaticText(0, c4d.BFH_LEFT, name="--- Export (v2.3) ---")
+            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=3, rows=1)
+            self.AddButton(_ID_BTN_EXP_MISSION, c4d.BFH_SCALEFIT, name="Export Mission")
+            self.AddButton(_ID_BTN_EXP_ROUTE, c4d.BFH_SCALEFIT, name="Export Route")
+            self.AddButton(_ID_BTN_EXP_CAMERA_PATH, c4d.BFH_SCALEFIT, name="Export Camera Path")
+            self.GroupEnd()
+            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=3, rows=1)
+            self.AddButton(_ID_BTN_EXP_TIMELINE, c4d.BFH_SCALEFIT, name="Export Timeline Data")
+            self.AddButton(_ID_BTN_EXP_DATASET_SUMMARY, c4d.BFH_SCALEFIT, name="Export Dataset Summary")
+            self.AddButton(_ID_BTN_EXP_PACKAGE, c4d.BFH_SCALEFIT, name="Export Full Package…")
+            self.GroupEnd()
+
             # v1.9 advanced-voyage row: templates + analytics +
             # exports + search.
             self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=4, rows=1)
@@ -1078,6 +1101,18 @@ if _C4D_AVAILABLE:
                     self._do_anim_preview_frame()
                 elif mid == _ID_BTN_ANIM_SYNC_AT_FRAME:
                     self._do_anim_sync_at_frame()
+                elif mid == _ID_BTN_EXP_MISSION:
+                    self._do_export_mission()
+                elif mid == _ID_BTN_EXP_ROUTE:
+                    self._do_export_route()
+                elif mid == _ID_BTN_EXP_CAMERA_PATH:
+                    self._do_export_camera_path()
+                elif mid == _ID_BTN_EXP_TIMELINE:
+                    self._do_export_timeline_data()
+                elif mid == _ID_BTN_EXP_DATASET_SUMMARY:
+                    self._do_export_dataset_summary()
+                elif mid == _ID_BTN_EXP_PACKAGE:
+                    self._do_export_package()
                 elif mid == _ID_BTN_TEMPLATE_NEW:
                     self._do_mission_new_from_template()
                 elif mid == _ID_BTN_MISSION_DUPLICATE:
@@ -2353,6 +2388,217 @@ if _C4D_AVAILABLE:
                 "queued (artist clicks Sync Visible Sector to "
                 "execute)."
             )
+
+        # --- v2.3 export helpers ---
+
+        def _ask_save_path(self, *, title: str, default_ext: str = ".json") -> Optional[str]:
+            try:
+                path = c4d.storage.LoadDialog(
+                    title=title, flags=c4d.FILESELECT_SAVE,
+                )
+            except Exception:  # noqa: BLE001
+                path = None
+            if not path:
+                return None
+            if default_ext and not path.lower().endswith(default_ext.lower()):
+                path += default_ext
+            return path
+
+        def _ask_save_dir(self, *, title: str) -> Optional[str]:
+            try:
+                path = c4d.storage.LoadDialog(
+                    title=title, flags=c4d.FILESELECT_DIRECTORY,
+                )
+            except Exception:  # noqa: BLE001
+                path = None
+            return path or None
+
+        def _build_anim_frame_range(self):
+            from c4d_objects.timeline_keys import BakeRange
+            try:
+                start_f = int(self.GetInt32(_ID_BAKE_START_FRAME))
+                end_f = int(self.GetInt32(_ID_BAKE_END_FRAME))
+            except Exception:  # noqa: BLE001
+                start_f, end_f = 0, 240
+            try:
+                fps = int(c4d.documents.GetActiveDocument().GetFps())
+            except Exception:  # noqa: BLE001
+                fps = 30
+            try:
+                return BakeRange(start_frame=start_f, end_frame=end_f, fps=fps)
+            except ValueError as exc:
+                self._append_log(f"Export: invalid frame range — {exc}")
+                return None
+
+        def _do_export_mission(self) -> None:
+            from export import ExportSettings, FORMAT_MISSION_JSON, export_one
+            mission = self._active_mission()
+            if mission is None:
+                self._append_log("Export: select a mission first.")
+                return
+            path = self._ask_save_path(title="Export Mission JSON")
+            if not path:
+                return
+            res = export_one(
+                FORMAT_MISSION_JSON, path, mission=mission,
+                settings=ExportSettings(allow_overwrite=True),
+            )
+            self._append_log(res.render_text())
+
+        def _do_export_route(self) -> None:
+            from export import ExportSettings, FORMAT_ROUTE_JSON, export_one
+            if not getattr(self, "_route", None) or len(self._route) == 0:
+                self._append_log("Export: no live route to export.")
+                return
+            path = self._ask_save_path(title="Export Route JSON")
+            if not path:
+                return
+            res = export_one(
+                FORMAT_ROUTE_JSON, path, route=self._route,
+                settings=ExportSettings(allow_overwrite=True),
+            )
+            self._append_log(res.render_text())
+
+        def _do_export_camera_path(self) -> None:
+            from export import (
+                ExportSettings, FORMAT_CAMERA_PATH_JSON, export_one,
+            )
+            mission = self._active_mission()
+            if mission is None:
+                self._append_log("Export: select a mission first.")
+                return
+            path_obj, _ = self._build_path_for_active_mission()
+            if path_obj is None or path_obj.is_empty():
+                self._append_log("Export: no resolvable camera path.")
+                return
+            fr = self._build_anim_frame_range()
+            if fr is None:
+                return
+            path = self._ask_save_path(title="Export Camera Path JSON")
+            if not path:
+                return
+            res = export_one(
+                FORMAT_CAMERA_PATH_JSON, path,
+                mission=mission, camera_path=path_obj, frame_range=fr,
+                settings=ExportSettings(
+                    allow_overwrite=True, plugin_version="v2.3",
+                ),
+            )
+            self._append_log(res.render_text())
+
+        def _do_export_timeline_data(self) -> None:
+            from animation import evaluate_animated_state
+            from export import (
+                ExportSettings, FORMAT_TIMELINE_KEYFRAMES_JSON, export_one,
+            )
+            mission = self._active_mission()
+            if mission is None:
+                self._append_log("Export: select a mission first.")
+                return
+            path_obj, _ = self._build_path_for_active_mission()
+            if path_obj is None or path_obj.is_empty():
+                self._append_log("Export: no resolvable camera path.")
+                return
+            fr = self._build_anim_frame_range()
+            if fr is None:
+                return
+            timeline = evaluate_animated_state(
+                mission, path_obj, frame_range=fr,
+            )
+            path = self._ask_save_path(title="Export Timeline Keyframes JSON")
+            if not path:
+                return
+            res = export_one(
+                FORMAT_TIMELINE_KEYFRAMES_JSON, path,
+                keyframes=timeline.keyframes, frame_range=fr,
+                settings=ExportSettings(allow_overwrite=True),
+            )
+            self._append_log(res.render_text())
+
+        def _do_export_dataset_summary(self) -> None:
+            from export import (
+                ExportSettings, FORMAT_DATASET_SUMMARY_JSON, export_one,
+                build_dataset_summary,
+            )
+            from core.state_manager import get_dataset_registry
+            try:
+                registry = get_dataset_registry()
+            except Exception:  # noqa: BLE001
+                registry = None
+            summary = build_dataset_summary(
+                registry=registry,
+                science_layer_settings=self._science_layer_settings,
+                plugin_version="v2.3",
+            )
+            path = self._ask_save_path(title="Export Dataset Summary JSON")
+            if not path:
+                return
+            res = export_one(
+                FORMAT_DATASET_SUMMARY_JSON, path, summary=summary,
+                settings=ExportSettings(allow_overwrite=True),
+            )
+            self._append_log(res.render_text())
+
+        def _do_export_package(self) -> None:
+            from animation import evaluate_animated_state
+            from export import (
+                PackageBuildSettings, build_dataset_summary, export_package,
+            )
+            from core.state_manager import get_dataset_registry
+            mgr = self._ensure_mission_manager()
+            missions = mgr.list_all()
+            if not missions:
+                self._append_log("Export: no missions to package.")
+                return
+            root = self._ask_save_dir(title="Export Full Package — pick directory")
+            if not root:
+                return
+            fr = self._build_anim_frame_range()
+            # Build camera-path entries for each mission whose
+            # path resolves.
+            camera_paths_by_label = {}
+            timeline_keyframes_by_label = {}
+            for mission in missions:
+                try:
+                    from voyage.camera_path import build_camera_path
+                    path_obj = build_camera_path(mission)
+                    if path_obj.is_empty() or fr is None:
+                        continue
+                    camera_paths_by_label[mission.title or mission.mission_id] = (
+                        mission, path_obj, fr,
+                    )
+                    tl = evaluate_animated_state(
+                        mission, path_obj, frame_range=fr,
+                    )
+                    timeline_keyframes_by_label[
+                        mission.title or mission.mission_id
+                    ] = (tl.keyframes, fr)
+                except Exception:  # noqa: BLE001
+                    continue
+            try:
+                registry = get_dataset_registry()
+            except Exception:  # noqa: BLE001
+                registry = None
+            summary = build_dataset_summary(
+                registry=registry,
+                science_layer_settings=self._science_layer_settings,
+                plugin_version="v2.3",
+                mission_references=[m.mission_id for m in missions],
+            )
+            rep = export_package(
+                root,
+                missions=missions,
+                camera_paths_by_label=camera_paths_by_label,
+                timeline_keyframes_by_label=timeline_keyframes_by_label,
+                science_layer_settings=self._science_layer_settings,
+                dataset_summary_data=summary,
+                active_dataset_names=[
+                    e.name for e in (registry.entries if registry else [])
+                    if getattr(e, "enabled", False)
+                ],
+                settings=PackageBuildSettings(plugin_version="v2.3"),
+            )
+            self._append_log(rep.render_text())
 
         # --- v1.9 advanced-voyage helpers ---
 

@@ -189,6 +189,75 @@ the dataset registry's `<entry.name>:` namespace layers on top.
 Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
 
+### S. Export Pipelines & Interchange (v2.3)
+
+v2.3 makes UNAV's data **shareable**. Voyages, routes,
+camera paths, timeline keyframes, and science-layer /
+dataset summaries can be exported into self-describing
+files other DCCs, archival workflows, or human readers can
+consume — without UNAV running.
+
+This is **not a render engine**. v2.3 is data interchange +
+production workflow support. The visible-sector pipeline,
+v2.0 overlays, v2.1 science layers, v2.2 timeline
+integration, and the v1.x voyage tools are all unchanged.
+
+What's new:
+
+* **`export/` package** — central dispatch over eight
+  stable formats: `mission_json`, `route_json`,
+  `waypoint_csv`, `route_markdown`, `camera_path_json`,
+  `timeline_keyframes_json`, `science_layer_json`,
+  `dataset_summary_json`. Each is pre-flight-validated and
+  atomically written.
+* **Export package** — one-call directory builder that
+  bundles missions, routes, camera paths, timeline data,
+  dataset summaries, and arbitrary docs under a stable
+  layout (`missions/`, `routes/`, `timelines/`,
+  `camera_paths/`, `datasets/`, `summaries/`, `docs/`)
+  with a top-level `manifest.json` carrying schema
+  version, plugin version, coordinate convention, units,
+  active datasets, and an inventory of every written
+  file.
+* **Camera-path interchange** — a DCC-agnostic JSON: per-
+  frame position / HPB rotation / optional FOV / optional
+  epoch / waypoint index, with an explicit `units` block
+  so a Maya / Houdini / Blender importer knows exactly
+  what it's reading.
+* **Dataset summary** — JSON snapshot of the active dataset
+  registry + navigator parameters + science-layer enable
+  list + per-source / per-type histograms, with a plain-
+  text renderer for the dialog log.
+* **Pre-flight validators** — fail-closed `ValidationReport`
+  for writable paths, missions, camera paths, registries,
+  manifest integrity, duplicate filenames. Errors abort
+  the export with no file written; warnings log and
+  proceed.
+* **Atomic writes everywhere** — every exporter goes
+  through the v1.7 `safe_write_json` helper. A crash mid-
+  write cannot truncate the previous valid file.
+* **Filename hygiene** — mission titles with `/`, `:`, etc.
+  are sanitised to safe filenames inside the package.
+* **Dialog** — Missions tab gains six new export buttons:
+  **Export Mission**, **Export Route**, **Export Camera
+  Path**, **Export Timeline Data**, **Export Dataset
+  Summary**, **Export Full Package…**.
+* **Tests** — `test_v23_export_validation` (every
+  validator), `test_v23_export_pipeline` (single-format
+  exports, package builder, manifest round-trip, camera
+  exchange, overwrite protection, sanitised filenames).
+  57 new tests; **1649 Python tests pass.**
+
+Walkthroughs:
+[`docs/V2_3_EXPORT_PIPELINES.md`](docs/V2_3_EXPORT_PIPELINES.md)
+— milestone summary,
+[`docs/EXPORT_PACKAGE_FORMAT.md`](docs/EXPORT_PACKAGE_FORMAT.md)
+— directory layout + manifest schema + versioning,
+[`docs/CAMERA_PATH_INTERCHANGE.md`](docs/CAMERA_PATH_INTERCHANGE.md)
+— DCC-agnostic camera JSON + units block + HPB convention,
+[`docs/DATASET_SUMMARY_EXPORT.md`](docs/DATASET_SUMMARY_EXPORT.md)
+— summary structure + reading outside UNAV.
+
 ### R. Animation & Timeline Integration (v2.2)
 
 v2.2 polishes the v1.4 voyage stack + v1.8 timeline baker
@@ -969,6 +1038,10 @@ the plugin's package layout is documented in [`docs/PLUGIN_STRUCTURE.md`](docs/P
 * [`docs/ANIMATED_UNAV_STATE.md`](docs/ANIMATED_UNAV_STATE.md) — frame-aware evaluator contract.
 * [`docs/TIMELINE_MARKERS.md`](docs/TIMELINE_MARKERS.md) — four marker kinds + idempotent C4D applier.
 * [`docs/SYNC_MARKERS_WORKFLOW.md`](docs/SYNC_MARKERS_WORKFLOW.md) — marker-based sync model + per-frame regeneration prohibition.
+* [`docs/V2_3_EXPORT_PIPELINES.md`](docs/V2_3_EXPORT_PIPELINES.md) — v2.3 export milestone summary: eight formats + package builder + atomic writes.
+* [`docs/EXPORT_PACKAGE_FORMAT.md`](docs/EXPORT_PACKAGE_FORMAT.md) — package directory layout + manifest schema + versioning.
+* [`docs/CAMERA_PATH_INTERCHANGE.md`](docs/CAMERA_PATH_INTERCHANGE.md) — DCC-agnostic camera JSON + units block + HPB convention.
+* [`docs/DATASET_SUMMARY_EXPORT.md`](docs/DATASET_SUMMARY_EXPORT.md) — dataset summary structure + reading outside UNAV.
 
 Per-feature deep docs:
 [`UNAV_PRO_ARCHITECTURE`](docs/UNAV_PRO_ARCHITECTURE.md) ·
@@ -1169,7 +1242,25 @@ the per-milestone phasing is in
   / ``evaluate_at_seconds`` for pure-read previews. Dialog
   gains 5 new buttons + 2 new fields. Sync markers are
   *requests*, not actions — see
-  ``SYNC_MARKERS_WORKFLOW.md``. **1592 Python tests pass.**
+  ``SYNC_MARKERS_WORKFLOW.md``.
+* **v2.3** ships the export pipelines + interchange layer.
+  New ``export/`` package: ``ExportManager``-style dispatch
+  over eight formats (mission JSON / route JSON / waypoint
+  CSV / route Markdown / camera path JSON / timeline
+  keyframes JSON / science layer JSON / dataset summary
+  JSON), pre-flight ``ValidationReport`` (writable paths,
+  missions, camera paths, registries, manifests, duplicate
+  filenames), atomic writes via the v1.7 ``safe_write_json``
+  helper. New ``export_package`` builder produces a
+  self-describing directory tree with a stable manifest
+  carrying schema version, plugin version, coordinate
+  convention, units, and an inventory of every written
+  file. New camera-path interchange JSON (DCC-agnostic;
+  per-frame position + HPB rotation + optional FOV +
+  optional epoch + waypoint index, with a units block).
+  Dialog gains six Export buttons. Mission titles with
+  illegal filename chars are sanitised. **1649 Python
+  tests pass.**
 
 ### Current limitations
 
