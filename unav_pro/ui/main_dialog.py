@@ -183,6 +183,19 @@ _ID_BTN_OVL_BUILD = 10509
 _ID_BTN_OVL_CLEAR = 10510
 _ID_OVL_STATUS = 10511
 
+# v2.1 science-layer controls.
+_ID_SCI_DISTANCE_SHELLS = 10520
+_ID_SCI_REDSHIFT_SHELLS = 10521
+_ID_SCI_MAGNITUDE_SHELLS = 10522
+_ID_SCI_MOTION_VECTORS = 10523
+_ID_SCI_SOURCE_REGIONS = 10524
+_ID_SCI_SOLAR_ORBITS = 10525
+_ID_SCI_CONSTELLATION = 10526
+_ID_SCI_DENSITY_VOLUME = 10527
+_ID_BTN_SCI_BUILD = 10530
+_ID_BTN_SCI_CLEAR = 10531
+_ID_SCI_STATUS = 10532
+
 
 if _C4D_AVAILABLE:
 
@@ -736,6 +749,33 @@ if _C4D_AVAILABLE:
                 _ID_OVL_STATUS, c4d.BFH_SCALEFIT,
                 name="(overlays idle)",
             )
+
+            # v2.1 science layers section. Lives in the same
+            # Overlays tab so the artist sees navigation +
+            # science controls together; the C4D builder
+            # keeps the materialised objects under a separate
+            # ``UNAV_ScienceLayers`` parent so the two
+            # systems don't interfere.
+            self.AddStaticText(0, c4d.BFH_LEFT, name="--- Science Layers (v2.1) ---")
+            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=2, rows=4)
+            self.AddCheckbox(_ID_SCI_DISTANCE_SHELLS, c4d.BFH_LEFT, 0, 0, name="Distance shells")
+            self.AddCheckbox(_ID_SCI_REDSHIFT_SHELLS, c4d.BFH_LEFT, 0, 0, name="Redshift shells (proxy)")
+            self.AddCheckbox(_ID_SCI_MAGNITUDE_SHELLS, c4d.BFH_LEFT, 0, 0, name="Magnitude shells (cosmetic)")
+            self.AddCheckbox(_ID_SCI_MOTION_VECTORS, c4d.BFH_LEFT, 0, 0, name="Motion vectors (Gaia)")
+            self.AddCheckbox(_ID_SCI_SOURCE_REGIONS, c4d.BFH_LEFT, 0, 0, name="Catalog source regions")
+            self.AddCheckbox(_ID_SCI_SOLAR_ORBITS, c4d.BFH_LEFT, 0, 0, name="Solar System orbits (placeholder)")
+            self.AddCheckbox(_ID_SCI_CONSTELLATION, c4d.BFH_LEFT, 0, 0, name="Constellation boundaries (placeholder)")
+            self.AddCheckbox(_ID_SCI_DENSITY_VOLUME, c4d.BFH_LEFT, 0, 0, name="Object density volume (placeholder)")
+            self.GroupEnd()
+            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=2, rows=1)
+            self.AddButton(_ID_BTN_SCI_BUILD, c4d.BFH_SCALEFIT, name="Build / Refresh Science Layers")
+            self.AddButton(_ID_BTN_SCI_CLEAR, c4d.BFH_SCALEFIT, name="Clear Science Layers")
+            self.GroupEnd()
+            self.AddStaticText(
+                _ID_SCI_STATUS, c4d.BFH_SCALEFIT,
+                name="(science layers idle)",
+            )
+
             self.GroupEnd()
 
         def InitValues(self) -> bool:
@@ -1023,6 +1063,17 @@ if _C4D_AVAILABLE:
                     _ID_OVL_SHOW_LABELS, _ID_OVL_RADIUS_PC,
                 ):
                     self._do_overlays_settings_changed()
+                elif mid == _ID_BTN_SCI_BUILD:
+                    self._do_science_layers_build()
+                elif mid == _ID_BTN_SCI_CLEAR:
+                    self._do_science_layers_clear()
+                elif mid in (
+                    _ID_SCI_DISTANCE_SHELLS, _ID_SCI_REDSHIFT_SHELLS,
+                    _ID_SCI_MAGNITUDE_SHELLS, _ID_SCI_MOTION_VECTORS,
+                    _ID_SCI_SOURCE_REGIONS, _ID_SCI_SOLAR_ORBITS,
+                    _ID_SCI_CONSTELLATION, _ID_SCI_DENSITY_VOLUME,
+                ):
+                    self._do_science_layers_settings_changed()
             except Exception as exc:  # noqa: BLE001 — UI boundary handler
                 _log.exception("Dialog command %s failed", mid)
                 self._append_log(f"ERROR: {exc!r}")
@@ -2379,6 +2430,132 @@ if _C4D_AVAILABLE:
                 self.SetString(
                     _ID_OVL_STATUS,
                     "(overlays cleared)" if ok else "(overlays idle)",
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+        # --- v2.1 science-layer helpers ---
+
+        # Cached ScienceLayerSettings the UI checkboxes write
+        # into. Built on demand from the v2.1 defaults +
+        # whatever the project state restored.
+        _science_layer_settings = None
+
+        def _read_science_layer_settings(self):
+            """Build a ``ScienceLayerSettings`` from the
+            current checkbox state."""
+            from astro import (
+                CatalogSourceRegionSettings,
+                ConstellationBoundarySettings,
+                DistanceShellSettings,
+                MagnitudeShellSettings,
+                MotionVectorSettings,
+                ObjectDensityVolumeSettings,
+                RedshiftShellSettings,
+                ScienceLayerSettings,
+                SolarSystemOrbitSettings,
+            )
+            settings = ScienceLayerSettings(
+                distance_shells=DistanceShellSettings(
+                    enabled=bool(self.GetBool(_ID_SCI_DISTANCE_SHELLS)),
+                ),
+                redshift_shells=RedshiftShellSettings(
+                    enabled=bool(self.GetBool(_ID_SCI_REDSHIFT_SHELLS)),
+                ),
+                magnitude_shells=MagnitudeShellSettings(
+                    enabled=bool(self.GetBool(_ID_SCI_MAGNITUDE_SHELLS)),
+                ),
+                motion_vectors=MotionVectorSettings(
+                    enabled=bool(self.GetBool(_ID_SCI_MOTION_VECTORS)),
+                ),
+                catalog_source_regions=CatalogSourceRegionSettings(
+                    enabled=bool(self.GetBool(_ID_SCI_SOURCE_REGIONS)),
+                ),
+                solar_system_orbits=SolarSystemOrbitSettings(
+                    enabled=bool(self.GetBool(_ID_SCI_SOLAR_ORBITS)),
+                ),
+                constellation_boundaries=ConstellationBoundarySettings(
+                    enabled=bool(self.GetBool(_ID_SCI_CONSTELLATION)),
+                ),
+                object_density_volume=ObjectDensityVolumeSettings(
+                    enabled=bool(self.GetBool(_ID_SCI_DENSITY_VOLUME)),
+                ),
+            )
+            self._science_layer_settings = settings
+            return settings
+
+        def _do_science_layers_settings_changed(self) -> None:
+            self._read_science_layer_settings()
+            try:
+                self.SetString(
+                    _ID_SCI_STATUS,
+                    "Science Layers: settings changed — click "
+                    "Build / Refresh to materialise.",
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+        def _do_science_layers_build(self) -> None:
+            """Build / refresh the v2.1 science layers under
+            ``UNAV_ScienceLayers``."""
+            from astro import build_science_bundle, render_warnings
+            from c4d_objects.overlays_builder import apply_science_bundle
+
+            settings = self._read_science_layer_settings()
+            if not settings.any_enabled():
+                self._append_log(
+                    "Science Layers: no layer is enabled — "
+                    "nothing to build."
+                )
+                self.SetString(
+                    _ID_SCI_STATUS,
+                    "Science Layers: nothing selected.",
+                )
+                return
+
+            # Pull rows from the active dataset registry.
+            objects = []
+            try:
+                from core.state_manager import get_dataset_registry
+                reg = get_dataset_registry()
+                merge = reg.merge_active(on_error="record")
+                objects = list(merge.objects)
+            except Exception:  # noqa: BLE001
+                self._append_log(
+                    "Science Layers: could not load active "
+                    "datasets; some layers will be empty."
+                )
+
+            bundle = build_science_bundle(settings, objects=objects)
+            warnings_text = render_warnings(bundle)
+            if warnings_text:
+                self._append_log(warnings_text)
+            written = apply_science_bundle(bundle)
+            self._append_log(
+                f"Science Layers: built {written} scene "
+                f"object(s) ({bundle.total_polylines()} "
+                f"polyline(s), {bundle.total_labels()} label(s))."
+            )
+            try:
+                self.SetString(
+                    _ID_SCI_STATUS,
+                    f"Science Layers: {written} scene object(s) live.",
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+        def _do_science_layers_clear(self) -> None:
+            from c4d_objects.overlays_builder import clear_science_layers
+            ok = clear_science_layers()
+            self._append_log(
+                "Science Layers: cleared." if ok
+                else "Science Layers: nothing to clear."
+            )
+            try:
+                self.SetString(
+                    _ID_SCI_STATUS,
+                    "(science layers cleared)" if ok
+                    else "(science layers idle)",
                 )
             except Exception:  # noqa: BLE001
                 pass

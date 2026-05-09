@@ -48,10 +48,24 @@ _log = get_logger("c4d_objects.overlays_builder")
 #: keys off this name so a rebuild can find + replace.
 OVERLAYS_ROOT_NAME: str = "UNAV_Overlays"
 
+#: v2.1: stable name of the root UNAV_ScienceLayers null. A
+#: separate sibling to ``OVERLAYS_ROOT_NAME`` so v2.0
+#: navigation overlays and v2.1 science layers can coexist
+#: without one builder eating the other's children.
+SCIENCE_LAYERS_ROOT_NAME: str = "UNAV_ScienceLayers"
+
 #: Stable per-kind container name. Lives directly under
 #: ``OVERLAYS_ROOT_NAME``.
 def _container_name(kind: str) -> str:
     return f"UNAV_Overlay_{kind}"
+
+
+def _science_container_name(layer_id: str) -> str:
+    """v2.1 per-layer container name. Lives under
+    ``SCIENCE_LAYERS_ROOT_NAME``; the prefix is distinct from
+    the v2.0 ``UNAV_Overlay_`` so a stray name collision
+    can't confuse the builders."""
+    return f"UNAV_ScienceLayer_{layer_id}"
 
 
 # ---------------------------------------------------------------------------
@@ -280,3 +294,149 @@ def container_name_for_kind(kind: str) -> str:
     """Stable per-kind container name. Used by tests + by the
     diagnostics renderer."""
     return _container_name(kind)
+
+
+# ---------------------------------------------------------------------------
+# v2.1 science-layer applier
+# ---------------------------------------------------------------------------
+
+
+def apply_science_bundle(
+    bundle,
+    *,
+    doc=None,
+) -> int:
+    """v2.1: materialise a ``ScienceBundle`` under
+    ``UNAV_ScienceLayers``.
+
+    Each layer's polylines + labels go into a single per-
+    layer container (``UNAV_ScienceLayer_<layer_id>``).
+    Per-layer containers are wiped + rebuilt on every call;
+    the root null itself persists so the artist's parent
+    transformations survive across rebuilds.
+
+    Empty / all-empty-layers bundle → the entire
+    ``UNAV_ScienceLayers`` subtree is removed (matches v2.0's
+    overlay-builder convention).
+
+    Returns the total number of scene objects inserted, or
+    0 when Cinema 4D isn't available.
+    """
+    if not _C4D_AVAILABLE:
+        return 0
+    if doc is None:
+        try:
+            from c4d import documents  # type: ignore
+            doc = documents.GetActiveDocument()
+        except Exception:  # noqa: BLE001
+            return 0
+    if doc is None:
+        return 0
+
+    root = _find_science_root(doc)
+    if bundle is None or bundle.empty():
+        if root is not None:
+            _remove(root)
+            try:
+                c4d.EventAdd()
+            except Exception:  # noqa: BLE001
+                pass
+        return 0
+
+    if root is None:
+        root = c4d.BaseObject(c4d.Onull)
+        root.SetName(SCIENCE_LAYERS_ROOT_NAME)
+        doc.InsertObject(root)
+
+    _clear_science_containers(root)
+
+    written = 0
+    for result in bundle.per_layer:
+        if not (result.polylines or result.labels):
+            continue
+        container = c4d.BaseObject(c4d.Onull)
+        container.SetName(_science_container_name(result.layer_id))
+        container.InsertUnder(root)
+        for poly in result.polylines:
+            obj = _spline_from_polyline(poly)
+            if obj is not None:
+                obj.InsertUnder(container)
+                written += 1
+        for lbl in result.labels:
+            obj = _null_from_label(lbl)
+            if obj is not None:
+                obj.InsertUnder(container)
+                written += 1
+
+    try:
+        c4d.EventAdd()
+    except Exception:  # noqa: BLE001
+        pass
+    return written
+
+
+def clear_science_layers(doc=None) -> bool:
+    """v2.1: remove the entire ``UNAV_ScienceLayers`` subtree
+    from the active document. Returns True when the root was
+    found and removed; False otherwise (or when Cinema 4D is
+    unavailable). Mirrors ``clear_overlays``."""
+    if not _C4D_AVAILABLE:
+        return False
+    if doc is None:
+        try:
+            from c4d import documents  # type: ignore
+            doc = documents.GetActiveDocument()
+        except Exception:  # noqa: BLE001
+            return False
+    if doc is None:
+        return False
+    root = _find_science_root(doc)
+    if root is None:
+        return False
+    _remove(root)
+    try:
+        c4d.EventAdd()
+    except Exception:  # noqa: BLE001
+        pass
+    return True
+
+
+def science_layers_root_name() -> str:
+    """v2.1: stable name of the science-layers root null."""
+    return SCIENCE_LAYERS_ROOT_NAME
+
+
+def container_name_for_layer(layer_id: str) -> str:
+    """v2.1: stable per-layer container name. Used by tests
+    + by the diagnostics renderer."""
+    return _science_container_name(layer_id)
+
+
+def _find_science_root(doc):
+    if not _C4D_AVAILABLE or doc is None:
+        return None
+    try:
+        return doc.SearchObject(SCIENCE_LAYERS_ROOT_NAME)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _clear_science_containers(root) -> None:
+    """Drop every per-layer container under ``root``. Keeps
+    the root itself in place so artist transformations on
+    the root survive a rebuild."""
+    if not _C4D_AVAILABLE or root is None:
+        return
+    child = root.GetDown()
+    to_remove = []
+    while child is not None:
+        nxt = child.GetNext()
+        name = child.GetName() or ""
+        if name.startswith("UNAV_ScienceLayer_"):
+            to_remove.append(child)
+        child = nxt
+    for obj in to_remove:
+        try:
+            obj.Remove()
+        except Exception:  # noqa: BLE001
+            _log.warning("science builder: failed to remove %s", obj)

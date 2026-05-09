@@ -189,6 +189,65 @@ the dataset registry's `<entry.name>:` namespace layers on top.
 Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
 
+### Q. Astrophysical Overlays & Science Layers (v2.1)
+
+v2.1 adds **science-aware overlays** on top of v2.0's
+procedural navigation overlays. Where v2.0 supplied neutral
+navigation aids (grids, planes, distance rings), v2.1 lets
+the artist drop layers that interpret the dataset: distance
+/ redshift / magnitude shells, per-row motion vectors, per-
+source bounding regions, solar-system orbital placeholders.
+
+This is **not a render engine**. v2.1 layers materialise as
+plain Cinema 4D scene objects under a dedicated
+``UNAV_ScienceLayers`` root null — sibling of the v2.0
+``UNAV_Overlays`` and the v0.1 ``UNAV_Starfield``, never
+walks under either. The visible-sector pipeline + v2.0
+overlays + v1.x voyage tools are all unchanged.
+
+What's new:
+
+* **`astro/overlay_layers.py`** — eight layer kinds:
+  ``distance_shells`` / ``redshift_shells`` /
+  ``magnitude_shells`` (real-but-cosmetic-mapping) +
+  ``motion_vectors`` / ``catalog_source_regions`` /
+  ``solar_system_orbits`` (dataset-driven) +
+  ``constellation_boundaries`` / ``object_density_volume``
+  (placeholders). Each carries its own `*Settings`
+  dataclass.
+* **`astro/science_layers.py`** — ``ScienceLayerSettings``
+  aggregator + ``build_science_bundle`` orchestrator + the
+  ``LAYER_SUPPORTED_SOURCES`` map documenting which catalog
+  sources each layer benefits from.
+* **`c4d_objects/overlays_builder.py`** — extended with
+  ``apply_science_bundle()`` / ``clear_science_layers()``.
+  Materialises bundles under ``UNAV_ScienceLayers``.
+  **Idempotent**: re-build replaces per-layer containers in
+  place; empty bundle drops the entire subtree.
+* **`core/project_state.py`** — new `science_layers` dict on
+  ``ProjectState``. Layer enable flags + per-layer knobs
+  round-trip through the per-scene sidecar.
+* **Dialog** — Overlays tab gains a Science Layers section
+  with eight enable checkboxes + Build / Clear transports +
+  status line.
+* **Tests** — ``test_v21_science_layers`` (per-layer math,
+  dataset-aware behaviour, settings round-trip, motion-vector
+  caps), ``test_v21_persistence_and_builder`` (project-state
+  round-trip incl. legacy v2.0 state, builder name contracts,
+  no-c4d safety). 55 new tests; **1540 Python tests pass.**
+* **Conservative scientific claims.** Every proxy / cosmetic
+  mapping is documented; each layer that uses one logs a
+  warning to the dialog. See
+  [`docs/SCIENCE_LAYER_LIMITATIONS.md`](docs/SCIENCE_LAYER_LIMITATIONS.md).
+
+Walkthroughs:
+[`docs/V2_1_ASTROPHYSICAL_OVERLAYS.md`](docs/V2_1_ASTROPHYSICAL_OVERLAYS.md)
+— milestone summary,
+[`docs/SCIENCE_LAYER_SYSTEM.md`](docs/SCIENCE_LAYER_SYSTEM.md)
+— eight layer kinds + math + idempotency contract,
+[`docs/SCIENCE_LAYER_LIMITATIONS.md`](docs/SCIENCE_LAYER_LIMITATIONS.md)
+— audit of every approximation / proxy / placeholder.
+
 ### P. Procedural Authoring Tools (v2.0)
 
 v2.0 adds **procedural overlays** — navigation aids the
@@ -843,6 +902,9 @@ the plugin's package layout is documented in [`docs/PLUGIN_STRUCTURE.md`](docs/P
 * [`docs/V2_0_PROCEDURAL_AUTHORING_TOOLS.md`](docs/V2_0_PROCEDURAL_AUTHORING_TOOLS.md) — v2.0 milestone summary: procedural overlays, dataset-derived helpers, persistence.
 * [`docs/OVERLAYS_SYSTEM.md`](docs/OVERLAYS_SYSTEM.md) — seven overlay kinds + math + idempotency contract.
 * [`docs/DATASET_DERIVED_HELPERS.md`](docs/DATASET_DERIVED_HELPERS.md) — bounding-sphere / source-distribution / placeholder helpers.
+* [`docs/V2_1_ASTROPHYSICAL_OVERLAYS.md`](docs/V2_1_ASTROPHYSICAL_OVERLAYS.md) — v2.1 milestone summary: science layers + dataset-aware overlays.
+* [`docs/SCIENCE_LAYER_SYSTEM.md`](docs/SCIENCE_LAYER_SYSTEM.md) — eight layer kinds, math, C4D builder idempotency.
+* [`docs/SCIENCE_LAYER_LIMITATIONS.md`](docs/SCIENCE_LAYER_LIMITATIONS.md) — audit of every proxy / cosmetic mapping.
 
 Per-feature deep docs:
 [`UNAV_PRO_ARCHITECTURE`](docs/UNAV_PRO_ARCHITECTURE.md) ·
@@ -1013,8 +1075,21 @@ the per-milestone phasing is in
   Dialog gains an **Overlays** tab with seven checkboxes +
   radius scrubber + Build / Clear transports. Visible-sector
   pipeline + v1.8 timeline baking + v1.9 voyage tools are
-  all unchanged. No rendering, no IPC. **1485 Python tests
-  pass.**
+  all unchanged. No rendering, no IPC.
+* **v2.1** ships astrophysical science layers. New
+  ``astro/`` package with eight layer kinds —
+  ``distance_shells``, ``redshift_shells`` (Hubble proxy,
+  flagged), ``magnitude_shells`` (cosmetic mapping, flagged),
+  ``motion_vectors`` (Gaia pmra/pmdec), ``catalog_source_regions``
+  (per-source bounding spheres), ``solar_system_orbits``
+  (placeholder rings), plus ``constellation_boundaries`` and
+  ``object_density_volume`` placeholders. Settings round-trip
+  through ``ProjectState.science_layers``; layers materialise
+  under a separate ``UNAV_ScienceLayers`` root (idempotent).
+  Dialog gains a Science Layers section in the Overlays tab.
+  No scientific claims beyond data — every proxy / cosmetic
+  mapping is logged as a warning and documented in
+  ``SCIENCE_LAYER_LIMITATIONS.md``. **1540 Python tests pass.**
 
 ### Current limitations
 

@@ -88,6 +88,12 @@ class ProjectState:
     # so the project_state layer keeps zero coupling to the
     # procedural module's import surface.
     overlays: Dict[str, Any] = field(default_factory=dict)
+    # v2.1: per-project science-layer settings. Same
+    # plain-dict convention so the project_state layer
+    # doesn't pull in the ``astro`` package at import time.
+    # The live ``ScienceLayerSettings`` is built via
+    # ``astro.ScienceLayerSettings.from_dict`` on demand.
+    science_layers: Dict[str, Any] = field(default_factory=dict)
 
     # ---------------------------------------------------- (de)serialization
     def to_dict(self) -> Dict[str, Any]:
@@ -101,6 +107,9 @@ class ProjectState:
             "config": dict(self.config) if self.config else None,
             "notes": self.notes,
             "overlays": dict(self.overlays) if self.overlays else {},
+            "science_layers": (
+                dict(self.science_layers) if self.science_layers else {}
+            ),
         }
 
     @classmethod
