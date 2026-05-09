@@ -47,6 +47,16 @@ Quaternion = Tuple[float, float, float, float]
 #: Identity orientation — no rotation.
 IDENTITY_QUAT: Quaternion = (1.0, 0.0, 0.0, 0.0)
 
+#: v1.8 interpolation modes. ``smooth`` is the v1.4 default
+#: (Catmull-Rom). ``linear`` swaps in straight-line position
+#: interpolation per segment — useful for "constant-velocity
+#: between waypoints" cinematics where Catmull-Rom's overshoot
+#: at corners is undesirable. The slerp orientation path and
+#: the epoch lerp path are unchanged across modes.
+INTERP_SMOOTH: str = "smooth"
+INTERP_LINEAR: str = "linear"
+INTERP_MODES: Tuple[str, ...] = (INTERP_SMOOTH, INTERP_LINEAR)
+
 
 @dataclass
 class CameraSample:
@@ -86,6 +96,11 @@ class CameraPath:
     epochs: List[Optional[float]] = field(default_factory=list)
     durations: List[float] = field(default_factory=list)
     cumulative_normalised: List[float] = field(default_factory=list)
+    # v1.8 fields. Defaults preserve the v1.4 behaviour when
+    # they aren't populated, so old paths keep working.
+    interp_mode: str = INTERP_SMOOTH
+    pause_durations: List[float] = field(default_factory=list)  # per-waypoint dwell, seconds
+    rolls_deg: List[float] = field(default_factory=list)  # per-waypoint roll, degrees
 
     # ------------------------------------------------------------- predicates
     def is_empty(self) -> bool:
@@ -132,13 +147,24 @@ class CameraPath:
         seg_t1 = cum[seg + 1]
         seg_span = max(seg_t1 - seg_t0, 1e-12)
         local = (t - seg_t0) / seg_span
+        clamped = max(0.0, min(1.0, local))
 
-        pos = _catmull_rom_segment(
-            self.positions, seg, max(0.0, min(1.0, local)),
-        )
+        if self.interp_mode == INTERP_LINEAR:
+            pos = _linear_segment(self.positions, seg, clamped)
+        else:
+            pos = _catmull_rom_segment(self.positions, seg, clamped)
         ori = _slerp(
             self.orientations[seg], self.orientations[seg + 1], local,
         )
+        # v1.8: roll about the local forward axis (interp linearly
+        # between waypoints). Applied as a quaternion composition
+        # so the slerp output stays a unit quaternion.
+        if self.rolls_deg:
+            roll = _interpolate_scalar(
+                self.rolls_deg[seg], self.rolls_deg[seg + 1], local,
+            )
+            if roll:
+                ori = _apply_roll(ori, roll)
         ep = _interpolate_epoch(
             self.epochs[seg], self.epochs[seg + 1], local,
         )
@@ -178,11 +204,24 @@ class CameraPathConfig:
       an explicit ``orientation_quat`` get a synthesised "look
       at next" orientation. Off → such waypoints get the
       identity quaternion.
+    * v1.8: ``interp_mode`` selects between Catmull-Rom
+      smoothing (``smooth``, the default) and per-segment
+      linear interpolation (``linear``).
+    * v1.8: ``honour_pause_seconds`` — when True (default),
+      ``MissionWaypoint.pause_seconds`` extends the cumulative
+      duration so the cursor *dwells* at the waypoint. When
+      False, pauses are ignored (the v1.4 behaviour).
+    * v1.8: ``honour_look_at`` — when True (default), a
+      waypoint's ``look_at_uid`` / ``look_at_position`` is
+      honoured (overrides the orient-toward-next default).
     """
 
     speed_multiplier: float = 1.0
     include_epoch: bool = True
     orient_toward_next: bool = True
+    interp_mode: str = INTERP_SMOOTH
+    honour_pause_seconds: bool = True
+    honour_look_at: bool = True
 
     def __post_init__(self) -> None:
         if self.speed_multiplier <= 0:
@@ -191,6 +230,11 @@ class CameraPathConfig:
             self.speed_multiplier = 0.1
         if self.speed_multiplier > 10.0:
             self.speed_multiplier = 10.0
+        if self.interp_mode not in INTERP_MODES:
+            raise ValueError(
+                f"interp_mode must be one of {INTERP_MODES}; "
+                f"got {self.interp_mode!r}"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -273,16 +317,25 @@ def build_camera_path(
         resolved.append((idx, wp, pos))
 
     path = CameraPath()
+    path.interp_mode = cfg.interp_mode
     if not resolved:
         return path
 
-    # --- Positions / durations / epochs ---
+    # --- Positions / durations / epochs / pauses / rolls ---
     last_epoch: Optional[float] = None
     for _, wp, pos in resolved:
         path.positions.append(pos)
-        path.durations.append(
-            float(wp.duration_seconds) / float(cfg.speed_multiplier)
-        )
+        # v1.8: travel duration + optional dwell pause are summed
+        # into the segment duration so the cursor visibly stops at
+        # the waypoint. Pauses are *additive* — they don't shorten
+        # travel time.
+        travel = float(wp.duration_seconds) / float(cfg.speed_multiplier)
+        pause = 0.0
+        if cfg.honour_pause_seconds and wp.pause_seconds:
+            pause = float(wp.pause_seconds) / float(cfg.speed_multiplier)
+        path.durations.append(travel + pause)
+        path.pause_durations.append(pause)
+        path.rolls_deg.append(float(wp.roll_deg or 0.0))
         if cfg.include_epoch and wp.epoch_jd is not None:
             last_epoch = float(wp.epoch_jd)
         path.epochs.append(last_epoch if cfg.include_epoch else None)
@@ -308,9 +361,22 @@ def build_camera_path(
 
     # --- Orientations ---
     for i, (_, wp, pos) in enumerate(resolved):
+        # 1. Explicit quaternion always wins.
         if wp.orientation_quat is not None:
             path.orientations.append(_normalise_quat(wp.orientation_quat))
             continue
+        # 2. v1.8: explicit look-at target wins over orient-toward-next.
+        look_target = None
+        if cfg.honour_look_at and wp.look_at_position is not None:
+            look_target = (
+                float(wp.look_at_position[0]),
+                float(wp.look_at_position[1]),
+                float(wp.look_at_position[2]),
+            )
+        if look_target is not None:
+            path.orientations.append(_orient_toward(pos, look_target))
+            continue
+        # 3. Fall back to orient-toward-next (the v1.4 behaviour).
         if cfg.orient_toward_next and i < len(resolved) - 1:
             target_pos = resolved[i + 1][2]
             path.orientations.append(_orient_toward(pos, target_pos))
@@ -364,6 +430,57 @@ def build_route_from_mission(mission: Mission):
 # ---------------------------------------------------------------------------
 # Math helpers — Catmull-Rom + slerp + epoch lerp
 # ---------------------------------------------------------------------------
+
+
+def _linear_segment(
+    pts: Sequence[Tuple[float, float, float]],
+    seg: int,
+    t: float,
+) -> Tuple[float, float, float]:
+    """v1.8 ``INTERP_LINEAR`` evaluator. Straight line between
+    ``pts[seg]`` and ``pts[seg+1]`` at parameter ``t`` in
+    ``[0, 1]``. Used when the artist wants constant-velocity
+    travel between waypoints with no Catmull-Rom overshoot."""
+    p1 = pts[seg]
+    p2 = pts[min(seg + 1, len(pts) - 1)]
+    return (
+        p1[0] + (p2[0] - p1[0]) * t,
+        p1[1] + (p2[1] - p1[1]) * t,
+        p1[2] + (p2[2] - p1[2]) * t,
+    )
+
+
+def _interpolate_scalar(a: float, b: float, t: float) -> float:
+    """Linear lerp between two floats. v1.8 helper for the
+    per-waypoint roll channel."""
+    return float(a) + (float(b) - float(a)) * float(t)
+
+
+def _apply_roll(q: Quaternion, roll_deg: float) -> Quaternion:
+    """Compose ``q`` with a roll rotation about the camera's
+    local forward axis (the body-frame +Z used by every
+    orientation in the camera path). v1.8 helper."""
+    if not roll_deg:
+        return q
+    half = math.radians(roll_deg) * 0.5
+    s = math.sin(half)
+    c = math.cos(half)
+    # Roll quat about local +Z, in body frame.
+    rq = (c, 0.0, 0.0, s)
+    return _quat_multiply(q, rq)
+
+
+def _quat_multiply(a: Quaternion, b: Quaternion) -> Quaternion:
+    """Hamilton product of two unit quaternions. ``(w, x, y, z)``
+    convention."""
+    aw, ax, ay, az = a
+    bw, bx, by, bz = b
+    return (
+        aw * bw - ax * bx - ay * by - az * bz,
+        aw * bx + ax * bw + ay * bz - az * by,
+        aw * by - ax * bz + ay * bw + az * bx,
+        aw * bz + ax * by - ay * bx + az * bw,
+    )
 
 
 def _catmull_rom_segment(
@@ -444,3 +561,74 @@ def _interpolate_epoch(
     if b is None:
         return float(a)
     return float(a) + (float(b) - float(a)) * float(t)
+
+
+# ---------------------------------------------------------------------------
+# v1.8: tessellation + C4D preview spline
+# ---------------------------------------------------------------------------
+
+
+def tessellate_path(
+    path: CameraPath,
+    *,
+    samples_per_segment: int = 16,
+) -> List[Tuple[float, float, float]]:
+    """Sample the camera path into a list of (x, y, z) points
+    suitable for a Cinema 4D ``SplineObject``.
+
+    For ``INTERP_LINEAR`` paths this returns each waypoint
+    plus interior points along the straight segments; for
+    ``INTERP_SMOOTH`` paths it tessellates the Catmull-Rom
+    curve at ``samples_per_segment`` points per segment so the
+    preview spline visibly follows the cinematic curve. Empty
+    paths return an empty list.
+
+    The returned list is a *visual approximation* — it is
+    suitable for the path-preview spline the dialog shows the
+    artist before Bake. It is **not** the data the playback
+    engine uses; that path samples the analytic curve directly.
+    """
+    if path.is_empty():
+        return []
+    if path.waypoint_count() == 1:
+        return [path.positions[0]]
+
+    samples_per_segment = max(2, int(samples_per_segment))
+    out: List[Tuple[float, float, float]] = []
+    n = path.waypoint_count()
+    cum = path.cumulative_normalised
+    for seg in range(n - 1):
+        for j in range(samples_per_segment):
+            local = j / float(samples_per_segment)
+            t = cum[seg] + (cum[seg + 1] - cum[seg]) * local
+            sample = path.sample(t)
+            out.append((sample.x, sample.y, sample.z))
+    # Always include the final endpoint exactly.
+    last = path.sample(1.0)
+    out.append((last.x, last.y, last.z))
+    return out
+
+
+#: Default name for the C4D preview spline the dialog drops
+#: into the active document. Pinning the name (instead of
+#: keying off a marker container) keeps the helper trivially
+#: identifiable in the OM and lets the artist find / delete
+#: it manually if anything goes wrong.
+PREVIEW_SPLINE_NAME: str = "UNAV_Mission_Preview"
+
+
+def build_preview_spline_data(
+    path: CameraPath,
+    *,
+    samples_per_segment: int = 16,
+) -> List[Tuple[float, float, float]]:
+    """Wrapper for the dialog's "Preview Path" button. Returns
+    the list of (x, y, z) points the dialog passes to its
+    Cinema 4D builder. The c4d-bound ``apply_preview_spline``
+    helper in ``c4d_objects/path_preview.py`` (when present)
+    consumes this list.
+
+    Kept separate from ``tessellate_path`` to give a stable
+    callsite for the v1.8 dialog wiring even if the
+    tessellation algorithm is replaced later."""
+    return tessellate_path(path, samples_per_segment=samples_per_segment)

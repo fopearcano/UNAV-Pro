@@ -262,6 +262,63 @@ class Playback:
             return None
         return self._move_by(1)
 
+    # --- v1.8 transport additions --------------------------------------
+    def jump_to_start(self) -> Optional[PlaybackTick]:
+        """v1.8: rewind the cursor to step 0 without resetting
+        the play flag. Always fires a sync."""
+        if self._total_steps == 0:
+            return None
+        self._step = 0
+        self._steps_since_sync = 0
+        return self._make_tick(triggered_sync=True, status="jump:start")
+
+    def jump_to_end(self) -> Optional[PlaybackTick]:
+        """v1.8: snap the cursor to the final step. Always fires
+        a sync. Mirrors ``jump_to_start``."""
+        if self._total_steps == 0:
+            return None
+        self._step = self._total_steps
+        self._steps_since_sync = 0
+        self._is_playing = False
+        return self._make_tick(triggered_sync=True, status="jump:end")
+
+    def scrub_to_progress(self, progress: float) -> Optional[PlaybackTick]:
+        """v1.8: place the cursor at a normalised progress in
+        ``[0.0, 1.0]``. Used by the dialog's scrub slider.
+
+        Out-of-range values clamp; the helper never raises and
+        always fires a sync (the artist explicitly seeks)."""
+        if self._total_steps == 0:
+            return None
+        p = 0.0 if progress < 0.0 else 1.0 if progress > 1.0 else float(progress)
+        self._step = int(round(p * self._total_steps))
+        self._steps_since_sync = 0
+        return self._make_tick(triggered_sync=True, status=f"scrub:{p:.3f}")
+
+    @property
+    def progress(self) -> float:
+        """v1.8: current cursor as a normalised ``[0.0, 1.0]``
+        progress. Useful for the dialog's scrub-slider readback."""
+        if self._total_steps <= 0:
+            return 0.0
+        return min(1.0, max(0.0, self._step / float(self._total_steps)))
+
+    def evaluate_at_progress(self, progress: float):
+        """v1.8: pure / side-effect-free pose readback.
+
+        Returns the ``CameraSample`` that *would* be produced if
+        the cursor were at ``progress`` ∈ ``[0, 1]`` — without
+        moving the cursor, without firing the apply callback, and
+        without firing the sync callback. The dialog uses this to
+        drive the scrub-slider preview before the artist commits.
+        Determinism: same input → same output.
+        """
+        if self._path.is_empty():
+            from voyage.camera_path import CameraSample
+            return CameraSample(t=0.0, x=0.0, y=0.0, z=0.0)
+        p = 0.0 if progress < 0.0 else 1.0 if progress > 1.0 else float(progress)
+        return self._path.sample(p)
+
     def set_speed(self, multiplier: float) -> None:
         """Update the speed multiplier mid-playback. Total
         step count stays the same; only the reported

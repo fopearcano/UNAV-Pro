@@ -189,6 +189,60 @@ the dataset registry's `<entry.name>:` namespace layers on top.
 Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
 
+### N. Cinematic Navigation Polish (v1.8)
+
+v1.8 polishes UNAV's v1.4 voyage system into a practical
+animation-authoring tool inside Cinema 4D.
+
+This is **not a rendering release**. v1.8 is camera movement,
+route animation, mission playback polish, and Cinema 4D
+timeline integration. The visible-sector pipeline is
+deliberately untouched; catalog ingest, DB queries, render
+backends, and binary export are unchanged.
+
+What's new:
+
+* **Camera-path additions** — `MissionWaypoint` gains
+  `pause_seconds` (dwell), `look_at_uid` /
+  `look_at_position` (camera target), and `roll_deg`
+  (camera roll). `CameraPathConfig` gains an `interp_mode`
+  (`smooth` / `linear`) and `tessellate_path()` for the
+  preview spline. All v1.4 missions round-trip
+  byte-identical; v1.8 fields are additive.
+* **Playback polish** — `Playback.jump_to_start()`,
+  `jump_to_end()`, `scrub_to_progress(p)`, the new
+  `progress` property, and the side-effect-free
+  `evaluate_at_progress(p)` for live-preview during scrub.
+* **Cinema 4D timeline baking** — new
+  `c4d_objects/timeline_keys.py` with a pure-Python
+  `generate_keyframes()` (testable without c4d) plus a
+  c4d-bound `apply_keyframes()` applier. Bakes camera +
+  navigator position / rotation channels — never touches the
+  visible-sector pipeline.
+* **Path-preview spline** — new
+  `c4d_objects/path_preview.py` drops a
+  `UNAV_Mission_Preview` `SplineObject` into the active
+  document so the artist can see the curve before baking.
+* **Dialog wiring** — Missions tab gains **Preview Path** /
+  **Clear Path Preview** / **Bake to Timeline** buttons,
+  **|◀ Start** / **End ▶|** transport buttons, an **Interp**
+  combo (smooth/linear), a **Scrub** slider (0..1000), and
+  **Start frame** / **End frame** numeric inputs.
+* **Tests** — `test_v18_camera_path`, `test_v18_playback`,
+  `test_v18_timeline_keys`, `test_v18_path_preview` cover
+  interpolation, scrub, frame mapping, keyframe gen,
+  missing-waypoint fallback. **1326 Python tests pass.**
+
+Walkthroughs:
+[`docs/V1_8_CINEMATIC_NAVIGATION.md`](docs/V1_8_CINEMATIC_NAVIGATION.md)
+— milestone summary,
+[`docs/CAMERA_PATH_AUTHORING.md`](docs/CAMERA_PATH_AUTHORING.md)
+— pause / look-at / roll / interp,
+[`docs/TIMELINE_BAKING.md`](docs/TIMELINE_BAKING.md) —
+keyframe generation + Cinema 4D applier,
+[`docs/MISSION_PLAYBACK_POLISH.md`](docs/MISSION_PLAYBACK_POLISH.md)
+— transport semantics + scrub-slider integration.
+
 ### M. Stabilization & Architecture Cleanup (v1.7)
 
 v1.7 is **not a feature release**. It is a reliability,
@@ -662,6 +716,10 @@ the plugin's package layout is documented in [`docs/PLUGIN_STRUCTURE.md`](docs/P
 * [`docs/V1_7_ARCHITECTURE_AUDIT.md`](docs/V1_7_ARCHITECTURE_AUDIT.md) — v1.7 internal as-is audit (state surfaces, scene-sync risks, memory caps).
 * [`docs/PLUGIN_LIFECYCLE.md`](docs/PLUGIN_LIFECYCLE.md) — startup / persistence / sync / shutdown lifecycle in detail.
 * [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) — the corner cases v1.7 deliberately defers (with reasoning).
+* [`docs/V1_8_CINEMATIC_NAVIGATION.md`](docs/V1_8_CINEMATIC_NAVIGATION.md) — v1.8 milestone summary: pause / look-at / roll / interp / scrub / bake.
+* [`docs/CAMERA_PATH_AUTHORING.md`](docs/CAMERA_PATH_AUTHORING.md) — authoring deep-dive (waypoint additions, interpolation modes, tessellation).
+* [`docs/TIMELINE_BAKING.md`](docs/TIMELINE_BAKING.md) — Cinema 4D keyframe baking contract (frame mapping, FPS, HPB conversion, decoupling from sector sync).
+* [`docs/MISSION_PLAYBACK_POLISH.md`](docs/MISSION_PLAYBACK_POLISH.md) — new transport methods + scrub-slider integration + side-effect-free evaluation.
 
 Per-feature deep docs:
 [`UNAV_PRO_ARCHITECTURE`](docs/UNAV_PRO_ARCHITECTURE.md) ·
@@ -784,6 +842,22 @@ the per-milestone phasing is in
   consistency. New `V1_7_*`, `PLUGIN_LIFECYCLE`,
   `KNOWN_LIMITATIONS` docs. **No new features; 1255
   Python tests pass.**
+* **v1.8** is the cinematic-navigation polish. The v1.4
+  voyage system gains pause / look-at / roll waypoint
+  fields and a smooth/linear interpolation switch on the
+  camera path. Playback adds `jump_to_start`,
+  `jump_to_end`, `scrub_to_progress`, and a
+  side-effect-free `evaluate_at_progress` for live-preview
+  during scrub. New `c4d_objects/timeline_keys.py` bakes a
+  mission's camera path into the Cinema 4D timeline as
+  keyframes (pure-Python generator + c4d-bound applier);
+  new `c4d_objects/path_preview.py` drops a preview spline
+  into the active document. Dialog gains **Preview Path**,
+  **Clear Preview**, **Bake to Timeline**, scrub slider,
+  start/end frame inputs, and an interp mode dropdown.
+  Visible-sector generation stays decoupled from animation.
+  No render-engine assumptions; no IPC. **1326 Python
+  tests pass.**
 
 ### Current limitations
 

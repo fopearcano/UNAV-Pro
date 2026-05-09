@@ -123,6 +123,30 @@ class MissionWaypoint:
     orientation_quat: Optional[Tuple[float, float, float, float]] = None
     duration_seconds: float = 4.0
 
+    # v1.8 cinematic-polish fields. All optional; the camera-path
+    # builder honours them when present and falls back to the
+    # v1.4 behaviour when they are not set, so existing missions
+    # round-trip unchanged.
+    #
+    # ``pause_seconds`` is the dwell time at the waypoint *after*
+    # arrival but before motion to the next waypoint resumes.
+    # Distinct from ``duration_seconds`` (which is travel time).
+    # Defaults to 0.0 (no dwell).
+    pause_seconds: float = 0.0
+    # ``look_at_uid`` and ``look_at_position`` define a camera
+    # target the cinematic builder will point the camera at while
+    # the cursor is on this waypoint. ``look_at_uid`` resolves
+    # via the active MetadataLookup; ``look_at_position`` is a
+    # free 3D point in C4D world units. ``orientation_quat``
+    # still wins when explicitly set — the look-at is a fallback
+    # for "I want to track Mars but I don't want to compute the
+    # quaternion myself".
+    look_at_uid: Optional[str] = None
+    look_at_position: Optional[Tuple[float, float, float]] = None
+    # Camera roll about the forward axis, in degrees. Applied
+    # after the look-at / orientation step. Defaults to 0.
+    roll_deg: float = 0.0
+
     # Free-form notes.
     notes: str = ""
 
@@ -149,6 +173,14 @@ class MissionWaypoint:
         if self.orientation_quat is not None:
             if len(self.orientation_quat) != 4:
                 raise ValueError("orientation_quat must be a 4-tuple (w, x, y, z)")
+        # v1.8 fields.
+        if self.pause_seconds < 0:
+            raise ValueError("pause_seconds must be >= 0")
+        if self.look_at_position is not None:
+            if len(self.look_at_position) != 3:
+                raise ValueError(
+                    "look_at_position must be a 3-tuple (x, y, z)"
+                )
 
     # ---------------------------------------------------------- predicates
     def has_c4d_position(self) -> bool:
@@ -194,6 +226,7 @@ class MissionWaypoint:
             "x_c4d", "y_c4d", "z_c4d",
             "x_pc", "y_pc", "z_pc",
             "epoch_jd",
+            "look_at_uid",
             "notes",
         ):
             v = getattr(self, k)
@@ -201,6 +234,14 @@ class MissionWaypoint:
                 out[k] = v
         if self.orientation_quat is not None:
             out["orientation_quat"] = list(self.orientation_quat)
+        if self.look_at_position is not None:
+            out["look_at_position"] = list(self.look_at_position)
+        # v1.8 fields — only emit when non-default to keep
+        # existing v1.4 missions byte-identical on round-trip.
+        if self.pause_seconds:
+            out["pause_seconds"] = float(self.pause_seconds)
+        if self.roll_deg:
+            out["roll_deg"] = float(self.roll_deg)
         return out
 
     @classmethod
@@ -211,6 +252,8 @@ class MissionWaypoint:
             if k not in known:
                 continue
             if k == "orientation_quat" and v is not None:
+                v = tuple(float(x) for x in v)
+            if k == "look_at_position" and v is not None:
                 v = tuple(float(x) for x in v)
             clean[k] = v
         return cls(**clean)

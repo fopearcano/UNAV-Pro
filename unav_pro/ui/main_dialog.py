@@ -147,6 +147,18 @@ _ID_PLAYBACK_STATUS = 10431
 _ID_MISSION_TITLE_INPUT = 10440
 _ID_MISSION_DESC_INPUT = 10441
 
+# v1.8 cinematic-polish controls.
+_ID_BTN_MISSION_PREVIEW_PATH = 10450
+_ID_BTN_MISSION_CLEAR_PREVIEW = 10451
+_ID_BTN_MISSION_BAKE = 10452
+_ID_BTN_PLAYBACK_JUMP_START = 10453
+_ID_BTN_PLAYBACK_JUMP_END = 10454
+_ID_PLAYBACK_SCRUB = 10455
+_ID_BAKE_START_FRAME = 10460
+_ID_BAKE_END_FRAME = 10461
+_ID_BAKE_FPS = 10462
+_ID_INTERP_MODE = 10463
+
 
 if _C4D_AVAILABLE:
 
@@ -583,14 +595,27 @@ if _C4D_AVAILABLE:
             self.AddButton(_ID_BTN_MISSION_PREVIEW_ROUTE, c4d.BFH_SCALEFIT, name="Preview as Route Spline")
             self.GroupEnd()
 
+            # v1.8 path-preview + bake row.
+            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=4, rows=1)
+            self.AddButton(_ID_BTN_MISSION_PREVIEW_PATH, c4d.BFH_SCALEFIT, name="Preview Path")
+            self.AddButton(_ID_BTN_MISSION_CLEAR_PREVIEW, c4d.BFH_SCALEFIT, name="Clear Path Preview")
+            self.AddStaticText(0, c4d.BFH_LEFT, name="Interp")
+            self.AddComboBox(_ID_INTERP_MODE, c4d.BFH_SCALEFIT)
+            self.AddChild(_ID_INTERP_MODE, 0, "smooth")
+            self.AddChild(_ID_INTERP_MODE, 1, "linear")
+            self.SetInt32(_ID_INTERP_MODE, 0)
+            self.GroupEnd()
+
             # Playback controls.
-            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=6, rows=1)
+            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=8, rows=1)
+            self.AddButton(_ID_BTN_PLAYBACK_JUMP_START, c4d.BFH_SCALEFIT, name="|◀ Start")
             self.AddButton(_ID_BTN_PLAYBACK_PREV, c4d.BFH_SCALEFIT, name="◀◀ Prev")
             self.AddButton(_ID_BTN_PLAYBACK_STEP_BACK, c4d.BFH_SCALEFIT, name="◀ Step")
             self.AddButton(_ID_BTN_PLAYBACK_PLAY, c4d.BFH_SCALEFIT, name="▶ Play")
             self.AddButton(_ID_BTN_PLAYBACK_PAUSE, c4d.BFH_SCALEFIT, name="❚❚ Pause")
             self.AddButton(_ID_BTN_PLAYBACK_STOP, c4d.BFH_SCALEFIT, name="◼ Stop")
             self.AddButton(_ID_BTN_PLAYBACK_STEP_FWD, c4d.BFH_SCALEFIT, name="Step ▶")
+            self.AddButton(_ID_BTN_PLAYBACK_JUMP_END, c4d.BFH_SCALEFIT, name="End ▶|")
             self.GroupEnd()
             self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=4, rows=1)
             self.AddStaticText(0, c4d.BFH_LEFT, name="Speed ×")
@@ -598,6 +623,25 @@ if _C4D_AVAILABLE:
             self.SetFloat(_ID_PLAYBACK_SPEED, 1.0, min=0.1, max=10.0, step=0.1)
             self.AddButton(_ID_BTN_PLAYBACK_NEXT, c4d.BFH_SCALEFIT, name="Next Wp ▶▶")
             self.GroupEnd()
+
+            # v1.8 scrub slider — 0..1000 maps to 0.0..1.0 progress.
+            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=2, rows=1)
+            self.AddStaticText(0, c4d.BFH_LEFT, name="Scrub")
+            self.AddEditSlider(_ID_PLAYBACK_SCRUB, c4d.BFH_SCALEFIT)
+            self.SetInt32(_ID_PLAYBACK_SCRUB, 0, min=0, max=1000, step=1)
+            self.GroupEnd()
+
+            # v1.8 bake row.
+            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=6, rows=1)
+            self.AddStaticText(0, c4d.BFH_LEFT, name="Start frame")
+            self.AddEditNumberArrows(_ID_BAKE_START_FRAME, c4d.BFH_SCALEFIT)
+            self.SetInt32(_ID_BAKE_START_FRAME, 0, min=0, max=999_999, step=1)
+            self.AddStaticText(0, c4d.BFH_LEFT, name="End frame")
+            self.AddEditNumberArrows(_ID_BAKE_END_FRAME, c4d.BFH_SCALEFIT)
+            self.SetInt32(_ID_BAKE_END_FRAME, 240, min=1, max=999_999, step=1)
+            self.AddButton(_ID_BTN_MISSION_BAKE, c4d.BFH_SCALEFIT, name="Bake to Timeline")
+            self.GroupEnd()
+
             self.AddStaticText(
                 _ID_PLAYBACK_STATUS, c4d.BFH_SCALEFIT,
                 name="(no mission loaded)",
@@ -855,6 +899,18 @@ if _C4D_AVAILABLE:
                     self._do_playback_transport("step_fwd")
                 elif mid == _ID_BTN_PLAYBACK_STEP_BACK:
                     self._do_playback_transport("step_back")
+                elif mid == _ID_BTN_PLAYBACK_JUMP_START:
+                    self._do_playback_transport("jump_start")
+                elif mid == _ID_BTN_PLAYBACK_JUMP_END:
+                    self._do_playback_transport("jump_end")
+                elif mid == _ID_PLAYBACK_SCRUB:
+                    self._do_playback_scrub()
+                elif mid == _ID_BTN_MISSION_PREVIEW_PATH:
+                    self._do_mission_preview_path()
+                elif mid == _ID_BTN_MISSION_CLEAR_PREVIEW:
+                    self._do_mission_clear_preview()
+                elif mid == _ID_BTN_MISSION_BAKE:
+                    self._do_mission_bake_timeline()
             except Exception as exc:  # noqa: BLE001 — UI boundary handler
                 _log.exception("Dialog command %s failed", mid)
                 self._append_log(f"ERROR: {exc!r}")
@@ -1759,8 +1815,21 @@ if _C4D_AVAILABLE:
                 tick = self._playback.step_forward()
             elif action == "step_back":
                 tick = self._playback.step_backward()
+            elif action == "jump_start":
+                tick = self._playback.jump_to_start()
+            elif action == "jump_end":
+                tick = self._playback.jump_to_end()
             if tick is not None:
                 self._append_log(render_tick(tick))
+                # v1.8: keep the scrub slider in sync with the
+                # cursor after every transport action.
+                try:
+                    self.SetInt32(
+                        _ID_PLAYBACK_SCRUB,
+                        int(round(self._playback.progress * 1000)),
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
             try:
                 self.SetString(
                     _ID_PLAYBACK_STATUS,
@@ -1768,6 +1837,161 @@ if _C4D_AVAILABLE:
                 )
             except Exception:  # noqa: BLE001
                 pass
+
+        # --- v1.8 cinematic-polish helpers ---
+
+        def _read_interp_mode(self) -> str:
+            """Read the v1.8 Interp dropdown. Index 0 → smooth,
+            index 1 → linear; anything else falls back to smooth."""
+            from voyage.camera_path import INTERP_LINEAR, INTERP_SMOOTH
+            try:
+                idx = int(self.GetInt32(_ID_INTERP_MODE))
+            except Exception:  # noqa: BLE001
+                idx = 0
+            return INTERP_LINEAR if idx == 1 else INTERP_SMOOTH
+
+        def _build_path_for_active_mission(self):
+            """Build a fresh ``CameraPath`` from the active
+            mission, honouring the dialog's current speed +
+            interp settings. Returns ``(path, report)`` or
+            ``(None, None)`` when no mission is loaded."""
+            from voyage.camera_path import CameraPathConfig
+            from ui.mission_panel import build_camera_path_with_report
+            mission = self._active_mission()
+            if mission is None:
+                self._append_log("Mission: select a mission first.")
+                return None, None
+            try:
+                speed = float(self.GetFloat(_ID_PLAYBACK_SPEED))
+            except Exception:  # noqa: BLE001
+                speed = 1.0
+            cfg = CameraPathConfig(
+                speed_multiplier=speed,
+                interp_mode=self._read_interp_mode(),
+            )
+            path, report = build_camera_path_with_report(mission, cfg)
+            return path, report
+
+        def _do_playback_scrub(self) -> None:
+            """v1.8 scrub-slider handler. Reads the slider
+            (0..1000), converts to progress (0.0..1.0), and
+            calls ``Playback.scrub_to_progress`` on the
+            currently-loaded engine. If no engine is loaded
+            yet, builds one on demand from the active mission."""
+            try:
+                slider = int(self.GetInt32(_ID_PLAYBACK_SCRUB))
+            except Exception:  # noqa: BLE001
+                slider = 0
+            progress = max(0.0, min(1.0, slider / 1000.0))
+            if self._playback is None:
+                # Cold-start: construct the engine so the artist
+                # can scrub without clicking Play first.
+                from voyage.playback import Playback, PlaybackConfig
+                path, report = self._build_path_for_active_mission()
+                if path is None or path.is_empty() or path.waypoint_count() < 2:
+                    return
+                if report and report.unresolved_count:
+                    self._append_log(
+                        f"Mission: {report.unresolved_count} waypoint(s) "
+                        "could not be resolved (no cached position)."
+                    )
+                self._playback = Playback(path=path, config=PlaybackConfig())
+            tick = self._playback.scrub_to_progress(progress)
+            if tick is not None:
+                from ui.mission_panel import (
+                    render_playback_status,
+                    render_tick,
+                )
+                self._append_log(render_tick(tick))
+                try:
+                    self.SetString(
+                        _ID_PLAYBACK_STATUS,
+                        render_playback_status(self._playback),
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+
+        def _do_mission_preview_path(self) -> None:
+            """v1.8: drop the mission's tessellated camera path
+            into the active document as a Cinema 4D
+            ``SplineObject`` so the artist can see the curve."""
+            from c4d_objects.path_preview import (
+                apply_preview_spline,
+                build_preview_points,
+            )
+            path, report = self._build_path_for_active_mission()
+            if path is None:
+                return
+            if path.is_empty():
+                self._append_log("Mission: no resolvable waypoints to preview.")
+                return
+            if report and report.unresolved_count:
+                self._append_log(
+                    f"Mission: {report.unresolved_count} waypoint(s) "
+                    "could not be resolved (no cached position)."
+                )
+            points = build_preview_points(path)
+            ok = apply_preview_spline(points)
+            self._append_log(
+                f"Mission: preview spline dropped ({len(points)} points)."
+                if ok else "Mission: preview spline could not be created."
+            )
+
+        def _do_mission_clear_preview(self) -> None:
+            """v1.8: remove the preview spline from the active
+            document. No-op if the spline wasn't there."""
+            from c4d_objects.path_preview import clear_preview_spline
+            ok = clear_preview_spline()
+            self._append_log(
+                "Mission: cleared preview spline." if ok
+                else "Mission: no preview spline to clear."
+            )
+
+        def _do_mission_bake_timeline(self) -> None:
+            """v1.8: bake the active mission's camera path into
+            Cinema 4D's timeline as keyframes. Honours the Start
+            Frame / End Frame / Speed inputs.
+
+            Per the v1.8 acceptance contract, baking only
+            touches camera/navigation; visible-sector generation
+            is not triggered."""
+            from c4d_objects.timeline_keys import (
+                BakeRange,
+                apply_keyframes,
+                generate_bake_report,
+                generate_keyframes,
+            )
+            path, report = self._build_path_for_active_mission()
+            if path is None:
+                return
+            if path.is_empty():
+                self._append_log("Mission: nothing to bake.")
+                return
+            if report and report.unresolved_count:
+                self._append_log(
+                    f"Mission: {report.unresolved_count} waypoint(s) "
+                    "could not be resolved (no cached position)."
+                )
+            try:
+                start_f = int(self.GetInt32(_ID_BAKE_START_FRAME))
+                end_f = int(self.GetInt32(_ID_BAKE_END_FRAME))
+            except Exception:  # noqa: BLE001
+                start_f, end_f = 0, 240
+            try:
+                fps = int(c4d.documents.GetActiveDocument().GetFps())
+            except Exception:  # noqa: BLE001
+                fps = 30
+            try:
+                fr = BakeRange(start_frame=start_f, end_frame=end_f, fps=fps)
+            except ValueError as exc:
+                self._append_log(f"Mission: bake refused — {exc}")
+                return
+            records = generate_keyframes(path, fr)
+            written = apply_keyframes(records)
+            self._append_log(
+                f"Mission: {generate_bake_report(records, fr).summary_line()} "
+                f"({written} key writes)"
+            )
 
         # The dataset manager dialog is async and persistent: we
         # keep one instance per session so re-clicking the menu

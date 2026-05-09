@@ -12,9 +12,15 @@ from .camera_path import (
     CameraPathConfig,
     CameraSample,
     IDENTITY_QUAT,
+    INTERP_LINEAR,
+    INTERP_MODES,
+    INTERP_SMOOTH,
+    PREVIEW_SPLINE_NAME,
     Quaternion,
     build_camera_path,
+    build_preview_spline_data,
     build_route_from_mission,
+    tessellate_path,
 )
 from .mission import (
     MAX_WAYPOINTS_PER_MISSION,
