@@ -189,6 +189,51 @@ the dataset registry's `<entry.name>:` namespace layers on top.
 Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
 
+### M. Stabilization & Architecture Cleanup (v1.7)
+
+v1.7 is **not a feature release**. It is a reliability,
+consistency, and maintainability pass over the v1.0–v1.4
+stack. UNAV is now a stable professional plugin: same
+features, fewer fragile edges, one source of truth for
+state, consistent UI terminology, deterministic cleanup.
+
+What changed:
+
+* **`core/state_manager.py`** — new central facade for every
+  UNAV singleton (config, bookmarks, dataset registry,
+  metadata lookup, time navigator, missions). The
+  diagnostics panel uses `health_summary()` to render a
+  one-line status per subsystem.
+* **Atomic JSON writes** — every persistence surface
+  (config, bookmarks, registry, mission files) routes
+  through `safe_write_json()`. A crash mid-write can no
+  longer truncate a valid file.
+* **Bounded-memory cone queries** — `db/spatial_query`
+  auto-derives a SQL `LIMIT` from the navigator's
+  `max_visible_objects` so a loose cone against a
+  million-row catalog can't fetchall() the entire bbox
+  into Python.
+* **`DatasetRegistry.reload()`** + **`time_navigator.default_state(reload=True)`**
+  — uniform reload semantics across every singleton.
+* **Defensive scene walks** — `_current_visible_objects`
+  now logs and skips half-deleted children instead of
+  crashing the iteration on a back-to-back sync race.
+* **UI verb consistency** — bookmark "Reload" → "Sync";
+  every persistence-style button now reads the same.
+* **5 new test files** + an updated suite passing **1255
+  tests** including new repeated-sync / mode-switch /
+  registry-reload / atomic-write coverage.
+
+Walkthroughs:
+[`docs/V1_7_STABILIZATION.md`](docs/V1_7_STABILIZATION.md) —
+milestone summary,
+[`docs/V1_7_ARCHITECTURE_AUDIT.md`](docs/V1_7_ARCHITECTURE_AUDIT.md)
+— internal as-is picture,
+[`docs/PLUGIN_LIFECYCLE.md`](docs/PLUGIN_LIFECYCLE.md) —
+startup / persistence / sync / shutdown lifecycle,
+[`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) —
+the corner cases v1.7 deliberately defers.
+
 ### L. Guided Voyages (v1.4)
 
 v1.4 turns UNAV into a tool for **structured interstellar
@@ -613,6 +658,10 @@ the plugin's package layout is documented in [`docs/PLUGIN_STRUCTURE.md`](docs/P
 * [`docs/MISSION_FORMAT.md`](docs/MISSION_FORMAT.md) — on-disk mission JSON layout + schema versioning.
 * [`docs/CINEMATIC_CAMERA_PATHS.md`](docs/CINEMATIC_CAMERA_PATHS.md) — Catmull-Rom + slerp + epoch lerp, deterministic guarantees.
 * [`docs/PLAYBACK_SYSTEM.md`](docs/PLAYBACK_SYSTEM.md) — transport semantics, sync cadence, safety contract.
+* [`docs/V1_7_STABILIZATION.md`](docs/V1_7_STABILIZATION.md) — v1.7 stabilization milestone summary.
+* [`docs/V1_7_ARCHITECTURE_AUDIT.md`](docs/V1_7_ARCHITECTURE_AUDIT.md) — v1.7 internal as-is audit (state surfaces, scene-sync risks, memory caps).
+* [`docs/PLUGIN_LIFECYCLE.md`](docs/PLUGIN_LIFECYCLE.md) — startup / persistence / sync / shutdown lifecycle in detail.
+* [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) — the corner cases v1.7 deliberately defers (with reasoning).
 
 Per-feature deep docs:
 [`UNAV_PRO_ARCHITECTURE`](docs/UNAV_PRO_ARCHITECTURE.md) ·
@@ -722,7 +771,19 @@ the per-milestone phasing is in
   between machines. Visible-sector sync fires on transport
   jumps + at a bounded cadence during play; fast scrubs are
   auto-throttled. Same input → byte-identical output.
-  **1221 Python tests pass.**
+* **v1.7** is the stabilization milestone. New
+  `core/state_manager.py` facade unifies every UNAV
+  singleton (config, bookmarks, dataset registry, metadata
+  lookup, time navigator, missions). Atomic JSON writes via
+  `safe_write_json` protect every persistence surface from
+  truncation on crash. Cone queries auto-derive a SQL
+  `LIMIT` from `max_visible_objects` to bound working
+  memory on million-row catalogs. Scene-walk hardening
+  prevents iteration crashes during back-to-back sync.
+  Uniform reload semantics across every singleton. UI verb
+  consistency. New `V1_7_*`, `PLUGIN_LIFECYCLE`,
+  `KNOWN_LIMITATIONS` docs. **No new features; 1255
+  Python tests pass.**
 
 ### Current limitations
 

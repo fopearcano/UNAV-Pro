@@ -493,12 +493,24 @@ class DatasetRegistry:
         return cls(entries=entries)
 
     def save(self, path: str) -> str:
-        parent = os.path.dirname(os.path.abspath(path))
-        if parent:
-            os.makedirs(parent, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as fh:
-            json.dump(self.to_dict(), fh, indent=2, sort_keys=True)
+        from core.config import safe_write_json
+        payload = json.dumps(self.to_dict(), indent=2, sort_keys=True)
+        safe_write_json(path, payload)
         return path
+
+    def reload(self, path: Optional[str] = None) -> "DatasetRegistry":
+        """v1.7: re-read entries from disk in place.
+
+        Replaces ``self.entries`` with the disk contents (or an
+        empty list if the file is missing / corrupt). Mutates and
+        returns ``self`` so callers can chain. Useful when an
+        external tool has edited ``datasets.json`` between dialog
+        sessions and the artist clicks "Sync" without restarting
+        the host."""
+        target = path or default_registry_path()
+        fresh = DatasetRegistry.load(target)
+        self.entries = fresh.entries
+        return self
 
     @classmethod
     def load(cls, path: str) -> "DatasetRegistry":

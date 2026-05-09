@@ -130,6 +130,34 @@ def load_config(path: Optional[str] = None) -> UnavConfig:
         return UnavConfig()
 
 
+def safe_write_json(path: str, payload: str) -> Optional[str]:
+    """Atomic JSON write helper shared by the v1.7 persistence
+    surfaces (config / bookmarks / project state / missions).
+
+    Writes to a sibling ``.tmp`` file and renames into place, so a
+    crash mid-write can never truncate an existing valid file.
+    Returns ``path`` on success or ``None`` on failure (never
+    raises). Logs at ``warning`` level on failure.
+    """
+    parent = os.path.dirname(os.path.abspath(path))
+    tmp = path + ".tmp"
+    try:
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write(payload)
+        os.replace(tmp, path)
+    except OSError as exc:
+        _log.warning("Could not write %s: %s", path, exc)
+        try:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+        except OSError:
+            pass
+        return None
+    return path
+
+
 def save_config(
     config: UnavConfig, path: Optional[str] = None,
 ) -> Optional[str]:
@@ -137,16 +165,7 @@ def save_config(
     failure. Failures are logged but not raised — preferences are not
     worth crashing the dialog over."""
     p = path or default_config_path()
-    parent = os.path.dirname(os.path.abspath(p))
-    try:
-        if parent:
-            os.makedirs(parent, exist_ok=True)
-        with open(p, "w", encoding="utf-8") as fh:
-            fh.write(config.to_json())
-    except OSError as exc:
-        _log.warning("Could not write config %s: %s", p, exc)
-        return None
-    return p
+    return safe_write_json(p, config.to_json())
 
 
 def reset_config(

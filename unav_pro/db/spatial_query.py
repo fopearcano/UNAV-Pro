@@ -266,11 +266,22 @@ def query_cone(
         near_pc=near_pc,
         pad_pc=bbox_pad_pc,
     )
+    # v1.7: when the caller has set ``max_visible_objects`` but
+    # not an explicit ``bbox_max_rows``, derive a SQL-level cap
+    # from the navigator's safety cap so a loose cone query
+    # against a 10M-row catalog can't fetchall() the entire
+    # bounding box into Python before the exact-cone refine
+    # has a chance to trim. The safety headroom is 4× — wide
+    # enough that the cone refine still has slack but tight
+    # enough to keep memory bounded.
+    effective_bbox_cap = bbox_max_rows
+    if effective_bbox_cap is None and max_visible_objects:
+        effective_bbox_cap = int(max_visible_objects) * 4
     bbox = query_bbox(
         db, bbox_min, bbox_max,
         selected_sources=selected_sources,
         selected_types=selected_types,
-        max_rows=bbox_max_rows,
+        max_rows=effective_bbox_cap,
     )
     candidates = bbox.objects
     # v1.2: when an epoch is supplied, resolve every candidate's

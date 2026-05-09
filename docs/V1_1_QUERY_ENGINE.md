@@ -170,3 +170,18 @@ table.
 * **Full-text search.** SQLite's FTS5 is reserved for v1.2;
   v1.1 covers the search panel's needs with the
   ``LOWER(name)`` functional indexes.
+
+---
+
+## v1.7 stabilization notes
+
+* **`bbox_max_rows` auto-derivation.** Before v1.7, callers
+  had to set `bbox_max_rows` explicitly to bound the
+  bounding-box prefilter. v1.7 derives it from
+  `max_visible_objects × 4` when the caller hasn't set it
+  (the 4× headroom keeps slack for the cone-refine pass).
+  See [`V1_7_STABILIZATION.md`](V1_7_STABILIZATION.md) §4.
+* **DB-backed dataset reload.** `DatasetRegistry.reload()`
+  re-reads `datasets.json` from disk in place. Useful when
+  an external tool has edited the registry while the dialog
+  is open. See [`V1_7_ARCHITECTURE_AUDIT.md`](V1_7_ARCHITECTURE_AUDIT.md) §4.

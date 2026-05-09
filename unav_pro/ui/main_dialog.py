@@ -492,7 +492,7 @@ if _C4D_AVAILABLE:
                 name="Capture Navigator Position",
             )
             self.AddButton(
-                _ID_BTN_BOOKMARK_REFRESH, c4d.BFH_SCALEFIT, name="Reload",
+                _ID_BTN_BOOKMARK_REFRESH, c4d.BFH_SCALEFIT, name="Sync",
             )
             self.GroupEnd()
             self.GroupEnd()

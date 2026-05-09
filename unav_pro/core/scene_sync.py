@@ -170,10 +170,23 @@ def _current_visible_objects(
     )
 
     out: Dict[str, "c4d.BaseObject"] = {}
+    # v1.7: defensive walk. ``GetNext`` is sampled before
+    # ``_read_marker`` so a child node that gets pruned during
+    # iteration (rare but possible during a back-to-back sync
+    # or a render-mode switch race) doesn't break the chain.
+    # Marker reads on half-torn-down nodes are caught and
+    # logged at warning level; the walk continues.
     child = visible_sector.GetDown()
     while child is not None:
         nxt = child.GetNext()
-        marker = _read_marker(child)
+        try:
+            marker = _read_marker(child)
+        except Exception as exc:  # noqa: BLE001 — c4d boundary
+            _log.warning(
+                "Scene-walk: skipping unreadable child: %s", exc,
+            )
+            child = nxt
+            continue
         if (
             marker is not None
             and marker.get(MARKER_KEY_KIND) == KIND_POINT

@@ -328,3 +328,27 @@ not loaded, navigator missing, safety override on, …).
   Active Datasets* is what populates the inspector; without it,
   every inspection falls back to "marker only" rendering even
   though the catalog is on disk.
+
+---
+
+## v1.7 stabilization notes
+
+* **State health check.** The Diagnostics tab now renders a
+  one-line health summary per UNAV subsystem (config,
+  bookmarks, datasets, time navigator, metadata lookup,
+  missions). When something is wrong, the failing subsystem
+  is named explicitly so an issue can be filed with concrete
+  information. See
+  [`PLUGIN_LIFECYCLE.md`](PLUGIN_LIFECYCLE.md) §8.
+* **Atomic config saves.** Every `~/.unav_pro/*.json`
+  surface is now written via the v1.7 `safe_write_json`
+  helper. A power loss mid-write can no longer leave a
+  truncated file on disk; the previous valid file is
+  preserved.
+* **Bounded-memory cone queries.** When you set the
+  navigator's `max_visible_objects`, that cap is now also
+  enforced at the SQL level (`LIMIT` clause), so a loose
+  cone against a million-row catalog won't materialise the
+  full bbox into Python before the cone refine.
+* **Bookmark "Reload" → "Sync".** The button label changed;
+  the behaviour is identical.

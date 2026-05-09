@@ -235,3 +235,17 @@ PLAYING / PAUSED / FINISHED.
 | Audio / narration                              | Out of scope. The dialog's status line is the only feedback today. |
 | Procedural waypoints (orbit-around, fly-by)    | Out of scope — the artist places every waypoint explicitly. |
 | Branching / non-linear missions                | A mission is strictly an ordered list.    |
+
+---
+
+## v1.7 stabilization notes
+
+* **Atomic mission writes.** Every per-mission file written
+  to `~/.unav_pro/missions/` now goes through the v1.7
+  `safe_write_json` helper, so a crash mid-write cannot
+  truncate a previously-valid mission JSON.
+* **State manager facade.** The mission manager is one of
+  the singletons exposed by `core.state_manager` —
+  `health_summary()` includes a "missions" line in the
+  diagnostics panel. See
+  [`PLUGIN_LIFECYCLE.md`](PLUGIN_LIFECYCLE.md) §2 / §8.

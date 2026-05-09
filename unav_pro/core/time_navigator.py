@@ -138,13 +138,19 @@ class TimeNavigatorState:
 _default_state: Optional[TimeNavigatorState] = None
 
 
-def default_state() -> TimeNavigatorState:
+def default_state(*, reload: bool = False) -> TimeNavigatorState:
     """Return the process-wide singleton, lazily initialised at the
     Gaia DR3 reference epoch (J2016.0). Mutating the returned object
     is observable by every caller — the dialog's Time Navigator
-    panel relies on this."""
+    panel relies on this.
+
+    With ``reload=True`` the existing singleton is replaced with a
+    fresh instance at the default epoch. Mirrors
+    ``metadata_lookup.default_lookup``'s reload semantics so the
+    v1.7 ``state_manager`` facade can offer a uniform API across
+    every singleton it tracks (see V1_7_ARCHITECTURE_AUDIT §2)."""
     global _default_state
-    if _default_state is None:
+    if reload or _default_state is None:
         _default_state = TimeNavigatorState()
     return _default_state
 
