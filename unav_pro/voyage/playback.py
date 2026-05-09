@@ -319,6 +319,43 @@ class Playback:
         p = 0.0 if progress < 0.0 else 1.0 if progress > 1.0 else float(progress)
         return self._path.sample(p)
 
+    def evaluate_at_frame(self, frame: int, frame_range):
+        """v2.2: pure / side-effect-free pose read at a Cinema
+        4D frame.
+
+        Maps ``frame`` into the path's ``[0, 1]`` progress via
+        the supplied ``BakeRange``, then dispatches to
+        ``evaluate_at_progress``. The dialog's "Preview Frame"
+        button uses this; tests can hit it without paying for
+        the full timeline.
+
+        Returns the same ``CameraSample`` shape as
+        ``evaluate_at_progress``. Out-of-range frames clamp to
+        the bake range. Empty paths return the zero pose."""
+        if self._path.is_empty():
+            from voyage.camera_path import CameraSample
+            return CameraSample(t=0.0, x=0.0, y=0.0, z=0.0)
+        span = frame_range.end_frame - frame_range.start_frame
+        if span <= 0:
+            return self.evaluate_at_progress(0.0)
+        clamped = max(
+            frame_range.start_frame,
+            min(int(frame), frame_range.end_frame),
+        )
+        progress = (clamped - frame_range.start_frame) / float(span)
+        return self.evaluate_at_progress(progress)
+
+    def evaluate_at_seconds(self, seconds: float, frame_range):
+        """v2.2: pure pose read at a wall-clock seconds offset
+        relative to the bake's start frame. Convenience over
+        ``evaluate_at_frame``."""
+        if frame_range.fps <= 0:
+            return self.evaluate_at_progress(0.0)
+        frame = frame_range.start_frame + int(round(
+            float(seconds) * frame_range.fps,
+        ))
+        return self.evaluate_at_frame(frame, frame_range)
+
     def set_speed(self, multiplier: float) -> None:
         """Update the speed multiplier mid-playback. Total
         step count stays the same; only the reported

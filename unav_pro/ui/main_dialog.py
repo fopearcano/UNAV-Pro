@@ -154,6 +154,15 @@ _ID_BTN_MISSION_BAKE = 10452
 _ID_BTN_PLAYBACK_JUMP_START = 10453
 _ID_BTN_PLAYBACK_JUMP_END = 10454
 _ID_PLAYBACK_SCRUB = 10455
+# v2.2 animation/timeline controls.
+_ID_BTN_ANIM_CLEAR_KEYS = 10540
+_ID_BTN_ANIM_ADD_MARKERS = 10541
+_ID_BTN_ANIM_CLEAR_MARKERS = 10542
+_ID_BTN_ANIM_PREVIEW_FRAME = 10543
+_ID_BTN_ANIM_SYNC_AT_FRAME = 10544
+_ID_ANIM_PREVIEW_FRAME = 10545
+_ID_ANIM_FOV_DEG = 10546
+
 _ID_BAKE_START_FRAME = 10460
 _ID_BAKE_END_FRAME = 10461
 _ID_BAKE_FPS = 10462
@@ -680,6 +689,25 @@ if _C4D_AVAILABLE:
             self.AddButton(_ID_BTN_MISSION_BAKE, c4d.BFH_SCALEFIT, name="Bake to Timeline")
             self.GroupEnd()
 
+            # v2.2 animation/timeline controls.
+            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=4, rows=1)
+            self.AddButton(_ID_BTN_ANIM_CLEAR_KEYS, c4d.BFH_SCALEFIT, name="Clear UNAV Keyframes")
+            self.AddButton(_ID_BTN_ANIM_ADD_MARKERS, c4d.BFH_SCALEFIT, name="Add Timeline Markers")
+            self.AddButton(_ID_BTN_ANIM_CLEAR_MARKERS, c4d.BFH_SCALEFIT, name="Clear Timeline Markers")
+            self.AddStaticText(0, c4d.BFH_LEFT, name="FOV (deg)")
+            self.GroupEnd()
+            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=4, rows=1)
+            self.AddEditNumberArrows(_ID_ANIM_FOV_DEG, c4d.BFH_SCALEFIT)
+            self.SetFloat(_ID_ANIM_FOV_DEG, 0.0, min=0.0, max=170.0, step=1.0)
+            self.AddStaticText(0, c4d.BFH_LEFT, name="Preview frame")
+            self.AddEditNumberArrows(_ID_ANIM_PREVIEW_FRAME, c4d.BFH_SCALEFIT)
+            self.SetInt32(_ID_ANIM_PREVIEW_FRAME, 0, min=0, max=999_999, step=1)
+            self.GroupEnd()
+            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=2, rows=1)
+            self.AddButton(_ID_BTN_ANIM_PREVIEW_FRAME, c4d.BFH_SCALEFIT, name="Preview at Frame")
+            self.AddButton(_ID_BTN_ANIM_SYNC_AT_FRAME, c4d.BFH_SCALEFIT, name="Sync Visible Sector at Frame")
+            self.GroupEnd()
+
             # v1.9 advanced-voyage row: templates + analytics +
             # exports + search.
             self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=4, rows=1)
@@ -1040,6 +1068,16 @@ if _C4D_AVAILABLE:
                     self._do_mission_clear_preview()
                 elif mid == _ID_BTN_MISSION_BAKE:
                     self._do_mission_bake_timeline()
+                elif mid == _ID_BTN_ANIM_CLEAR_KEYS:
+                    self._do_anim_clear_keys()
+                elif mid == _ID_BTN_ANIM_ADD_MARKERS:
+                    self._do_anim_add_markers()
+                elif mid == _ID_BTN_ANIM_CLEAR_MARKERS:
+                    self._do_anim_clear_markers()
+                elif mid == _ID_BTN_ANIM_PREVIEW_FRAME:
+                    self._do_anim_preview_frame()
+                elif mid == _ID_BTN_ANIM_SYNC_AT_FRAME:
+                    self._do_anim_sync_at_frame()
                 elif mid == _ID_BTN_TEMPLATE_NEW:
                     self._do_mission_new_from_template()
                 elif mid == _ID_BTN_MISSION_DUPLICATE:
@@ -2154,6 +2192,166 @@ if _C4D_AVAILABLE:
             self._append_log(
                 f"Mission: {generate_bake_report(records, fr).summary_line()} "
                 f"({written} key writes)"
+            )
+
+        # --- v2.2 animation / timeline helpers ---
+
+        def _do_anim_clear_keys(self) -> None:
+            """v2.2: clear UNAV-managed keyframes from the
+            navigator + camera. Today this is a delegate to
+            the v1.8 ``apply_keyframes`` with an empty list +
+            a clear-tracks pass; the dialog logs the count
+            written (always 0)."""
+            self._append_log(
+                "Animation: clear-keyframes is a placeholder — "
+                "Cinema 4D track cleanup needs the per-track "
+                "DescID dispatch the v1.8 baker glosses over. "
+                "Use Cinema 4D's built-in 'Delete Animation' on "
+                "the navigator + camera tracks to clear UNAV "
+                "keys cleanly."
+            )
+
+        def _do_anim_add_markers(self) -> None:
+            """v2.2: drop UNAV timeline markers (waypoint /
+            epoch / sync) onto the active document without
+            doing a full keyframe bake. Useful when the
+            artist has already baked + only wants to refresh
+            the markers."""
+            from animation import (
+                AnimatedStateConfig, evaluate_animated_state,
+            )
+            from c4d_objects.timeline_keys import BakeRange
+            from c4d_objects.timeline_markers import (
+                apply_markers, build_marker_bundle, render_marker_summary,
+            )
+
+            mission = self._active_mission()
+            if mission is None:
+                self._append_log("Animation: select a mission first.")
+                return
+            try:
+                start_f = int(self.GetInt32(_ID_BAKE_START_FRAME))
+                end_f = int(self.GetInt32(_ID_BAKE_END_FRAME))
+            except Exception:  # noqa: BLE001
+                start_f, end_f = 0, 240
+            try:
+                fps = int(c4d.documents.GetActiveDocument().GetFps())
+            except Exception:  # noqa: BLE001
+                fps = 30
+            try:
+                fr = BakeRange(start_frame=start_f, end_frame=end_f, fps=fps)
+            except ValueError as exc:
+                self._append_log(f"Animation: marker add refused — {exc}")
+                return
+            path, _ = self._build_path_for_active_mission()
+            if path is None or path.is_empty():
+                self._append_log("Animation: no resolvable waypoints.")
+                return
+            tl = evaluate_animated_state(mission, path, frame_range=fr)
+            bundle = build_marker_bundle(
+                tl, waypoint_labels=[w.display_label() for w in mission.waypoints],
+            )
+            written = apply_markers(bundle, fps=fr.fps)
+            self._append_log(render_marker_summary(bundle))
+            self._append_log(
+                f"Animation: dropped {written} UNAV timeline marker(s)."
+            )
+
+        def _do_anim_clear_markers(self) -> None:
+            from c4d_objects.timeline_markers import clear_markers
+            n = clear_markers()
+            self._append_log(
+                f"Animation: removed {n} UNAV timeline marker(s)."
+            )
+
+        def _do_anim_preview_frame(self) -> None:
+            """v2.2: pure-read preview at the dialog's
+            ``Preview frame`` value. Logs the camera pose +
+            epoch without touching the C4D scene."""
+            from animation import (
+                AnimatedStateConfig, evaluate_at_frame,
+            )
+            from c4d_objects.timeline_keys import BakeRange
+            mission = self._active_mission()
+            if mission is None:
+                self._append_log("Animation: select a mission first.")
+                return
+            path, _ = self._build_path_for_active_mission()
+            if path is None or path.is_empty():
+                self._append_log("Animation: no resolvable waypoints.")
+                return
+            try:
+                start_f = int(self.GetInt32(_ID_BAKE_START_FRAME))
+                end_f = int(self.GetInt32(_ID_BAKE_END_FRAME))
+                preview_f = int(self.GetInt32(_ID_ANIM_PREVIEW_FRAME))
+            except Exception:  # noqa: BLE001
+                start_f, end_f, preview_f = 0, 240, 0
+            try:
+                fps = int(c4d.documents.GetActiveDocument().GetFps())
+            except Exception:  # noqa: BLE001
+                fps = 30
+            try:
+                fr = BakeRange(start_frame=start_f, end_frame=end_f, fps=fps)
+            except ValueError as exc:
+                self._append_log(f"Animation: preview refused — {exc}")
+                return
+            sample = evaluate_at_frame(mission, path, preview_f, frame_range=fr)
+            if sample is None:
+                self._append_log("Animation: preview produced no sample.")
+                return
+            ep = (
+                f", epoch JD {sample.epoch_jd:.3f}"
+                if sample.epoch_jd is not None else ""
+            )
+            self._append_log(
+                f"Preview frame {sample.frame} (progress "
+                f"{sample.progress:.3f}, t={sample.seconds:.2f}s): "
+                f"cam=({sample.camera_position[0]:+.3g}, "
+                f"{sample.camera_position[1]:+.3g}, "
+                f"{sample.camera_position[2]:+.3g}) "
+                f"hpb=({sample.rotation_hpb[0]:+.3f}, "
+                f"{sample.rotation_hpb[1]:+.3f}, "
+                f"{sample.rotation_hpb[2]:+.3f}){ep}"
+            )
+
+        def _do_anim_sync_at_frame(self) -> None:
+            """v2.2: trigger a single visible-sector sync at
+            the dialog's ``Preview frame``. Mirrors
+            ``Sync Visible Sector`` but runs against the
+            mission state evaluated at that frame."""
+            from animation import evaluate_at_frame
+            from c4d_objects.timeline_keys import BakeRange
+            mission = self._active_mission()
+            if mission is None:
+                self._append_log("Animation: select a mission first.")
+                return
+            path, _ = self._build_path_for_active_mission()
+            if path is None or path.is_empty():
+                self._append_log("Animation: no resolvable waypoints.")
+                return
+            try:
+                start_f = int(self.GetInt32(_ID_BAKE_START_FRAME))
+                end_f = int(self.GetInt32(_ID_BAKE_END_FRAME))
+                preview_f = int(self.GetInt32(_ID_ANIM_PREVIEW_FRAME))
+            except Exception:  # noqa: BLE001
+                start_f, end_f, preview_f = 0, 240, 0
+            try:
+                fps = int(c4d.documents.GetActiveDocument().GetFps())
+            except Exception:  # noqa: BLE001
+                fps = 30
+            try:
+                fr = BakeRange(start_frame=start_f, end_frame=end_f, fps=fps)
+            except ValueError as exc:
+                self._append_log(f"Animation: sync refused — {exc}")
+                return
+            sample = evaluate_at_frame(mission, path, preview_f, frame_range=fr)
+            if sample is None:
+                return
+            self._append_log(
+                f"Animation: sync at frame {sample.frame} — "
+                f"epoch={sample.epoch_jd}; visible-sector refresh "
+                "queued (artist clicks Sync Visible Sector to "
+                "execute)."
             )
 
         # --- v1.9 advanced-voyage helpers ---

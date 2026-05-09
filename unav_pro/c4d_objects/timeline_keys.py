@@ -432,3 +432,84 @@ def _record_track_key(doc, obj, desc_id, btime, value) -> None:
         k.SetValue(curve, value.x)
     else:
         k.SetValue(curve, float(value))
+
+
+# ---------------------------------------------------------------------------
+# v2.2 mission-to-timeline one-shot
+# ---------------------------------------------------------------------------
+
+
+def bake_mission_to_timeline(
+    mission,
+    path,
+    *,
+    frame_range: Optional[BakeRange] = None,
+    config=None,
+    navigator=None,
+    camera=None,
+    doc=None,
+    apply_markers_to_doc: bool = True,
+    science_layer_frames: Optional[Sequence[int]] = None,
+    waypoint_labels: Optional[Sequence[str]] = None,
+):
+    """v2.2 high-level baker.
+
+    Walks the v2.2 ``evaluate_animated_state`` over ``mission``
+    + ``path``, then in one transactional step:
+
+    * writes one keyframe per frame on ``navigator`` and
+      ``camera`` (position / rotation; FOV optional);
+    * inserts UNAV-tagged markers (waypoint / epoch / sync /
+      science) onto the document timeline;
+    * returns the (``timeline``, ``keyframes_written``,
+      ``markers_written``) tuple so the dialog can log a
+      summary.
+
+    The visible-sector pipeline is **never** triggered by
+    this function — the markers are *requests* that the
+    dialog / SceneHook honours separately.
+
+    Pure-Python fallback: when Cinema 4D isn't available, the
+    function still builds the animated timeline + marker
+    bundle and returns them with zero scene writes.
+    """
+    from animation.animated_state import (
+        evaluate_animated_state,
+    )
+    from c4d_objects.timeline_markers import (
+        apply_markers,
+        build_marker_bundle,
+    )
+    fr = frame_range or BakeRange()
+    timeline = evaluate_animated_state(
+        mission, path, frame_range=fr, config=config,
+    )
+    if timeline.is_empty():
+        return timeline, 0, 0
+
+    # Keyframes — reuse the v1.8 applier verbatim.
+    keys_written = apply_keyframes(
+        timeline.keyframes,
+        navigator=navigator,
+        camera=camera,
+        doc=doc,
+        apply_position_to_navigator=True,
+        apply_position_to_camera=True,
+        apply_rotation_to_camera=True,
+        apply_fov_to_camera=any(
+            r.fov_rad is not None for r in timeline.keyframes
+        ),
+    )
+
+    markers_written = 0
+    if apply_markers_to_doc:
+        bundle = build_marker_bundle(
+            timeline,
+            waypoint_labels=waypoint_labels,
+            science_layer_frames=science_layer_frames,
+        )
+        markers_written = apply_markers(
+            bundle, doc=doc, fps=fr.fps,
+        )
+
+    return timeline, keys_written, markers_written

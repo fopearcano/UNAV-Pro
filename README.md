@@ -189,6 +189,66 @@ the dataset registry's `<entry.name>:` namespace layers on top.
 Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
 
+### R. Animation & Timeline Integration (v2.2)
+
+v2.2 polishes the v1.4 voyage stack + v1.8 timeline baker
+into a workable animation-authoring pipeline inside Cinema
+4D. Frame-aware mission state, UNAV-tagged timeline markers
+(waypoint / epoch / sync / science), pure-read previews,
+and a one-shot mission-to-timeline baker.
+
+This is **not a render engine**. v2.2 is animation
+*authoring*: keyframing, timeline markers, animated
+navigation state. The visible-sector pipeline + v2.0
+overlays + v2.1 science layers + v1.x voyage tools are
+all unchanged.
+
+What's new:
+
+* **`animation/animated_state.py`** — pure-Python
+  per-frame evaluator. ``AnimatedSample``,
+  ``AnimatedTimeline``, ``evaluate_animated_state``,
+  ``evaluate_at_frame`` / ``evaluate_at_seconds``
+  (single-frame pure reads). Determinism: same input →
+  byte-identical output.
+* **`c4d_objects/timeline_markers.py`** — pure-Python
+  ``MarkerRecord`` + ``MarkerBundle`` data layer +
+  ``build_marker_bundle`` builder + ``apply_markers`` /
+  ``clear_markers`` C4D applier. Idempotent via the
+  ``UNAV:`` name prefix; markers placed by the artist
+  or other plugins are untouched.
+* **`c4d_objects/timeline_keys.py`** — extended with
+  ``bake_mission_to_timeline``: keyframes (camera +
+  navigator + optional FOV) + timeline markers in one
+  transactional pass. The bake **never** triggers the
+  visible-sector pipeline.
+* **`voyage/playback.py`** — ``Playback.evaluate_at_frame``
+  / ``evaluate_at_seconds``: side-effect-free pose
+  readback at a Cinema 4D frame.
+* **Dialog** — Missions tab gains **Clear UNAV Keyframes**,
+  **Add Timeline Markers**, **Clear Timeline Markers**,
+  **Preview at Frame**, **Sync Visible Sector at Frame**
+  buttons + an **FOV (deg)** field + a **Preview frame**
+  scrubber.
+* **Tests** — ``test_v22_animated_state``,
+  ``test_v22_timeline_markers``,
+  ``test_v22_playback_and_bake`` (52 new tests; **1592
+  Python tests pass**).
+* **Marker-based sync, not per-frame.** Sync markers are
+  *requests* the dialog / SceneHook honours separately;
+  the bake never fires the visible-sector pipeline. See
+  [`docs/SYNC_MARKERS_WORKFLOW.md`](docs/SYNC_MARKERS_WORKFLOW.md).
+
+Walkthroughs:
+[`docs/V2_2_ANIMATION_TIMELINE_INTEGRATION.md`](docs/V2_2_ANIMATION_TIMELINE_INTEGRATION.md)
+— milestone summary,
+[`docs/ANIMATED_UNAV_STATE.md`](docs/ANIMATED_UNAV_STATE.md)
+— frame-aware evaluator contract,
+[`docs/TIMELINE_MARKERS.md`](docs/TIMELINE_MARKERS.md) —
+four marker kinds + idempotent applier,
+[`docs/SYNC_MARKERS_WORKFLOW.md`](docs/SYNC_MARKERS_WORKFLOW.md)
+— marker-based sync model.
+
 ### Q. Astrophysical Overlays & Science Layers (v2.1)
 
 v2.1 adds **science-aware overlays** on top of v2.0's
@@ -905,6 +965,10 @@ the plugin's package layout is documented in [`docs/PLUGIN_STRUCTURE.md`](docs/P
 * [`docs/V2_1_ASTROPHYSICAL_OVERLAYS.md`](docs/V2_1_ASTROPHYSICAL_OVERLAYS.md) — v2.1 milestone summary: science layers + dataset-aware overlays.
 * [`docs/SCIENCE_LAYER_SYSTEM.md`](docs/SCIENCE_LAYER_SYSTEM.md) — eight layer kinds, math, C4D builder idempotency.
 * [`docs/SCIENCE_LAYER_LIMITATIONS.md`](docs/SCIENCE_LAYER_LIMITATIONS.md) — audit of every proxy / cosmetic mapping.
+* [`docs/V2_2_ANIMATION_TIMELINE_INTEGRATION.md`](docs/V2_2_ANIMATION_TIMELINE_INTEGRATION.md) — v2.2 milestone summary: animated state, timeline markers, mission-to-timeline bake.
+* [`docs/ANIMATED_UNAV_STATE.md`](docs/ANIMATED_UNAV_STATE.md) — frame-aware evaluator contract.
+* [`docs/TIMELINE_MARKERS.md`](docs/TIMELINE_MARKERS.md) — four marker kinds + idempotent C4D applier.
+* [`docs/SYNC_MARKERS_WORKFLOW.md`](docs/SYNC_MARKERS_WORKFLOW.md) — marker-based sync model + per-frame regeneration prohibition.
 
 Per-feature deep docs:
 [`UNAV_PRO_ARCHITECTURE`](docs/UNAV_PRO_ARCHITECTURE.md) ·
@@ -1089,7 +1153,23 @@ the per-milestone phasing is in
   Dialog gains a Science Layers section in the Overlays tab.
   No scientific claims beyond data — every proxy / cosmetic
   mapping is logged as a warning and documented in
-  ``SCIENCE_LAYER_LIMITATIONS.md``. **1540 Python tests pass.**
+  ``SCIENCE_LAYER_LIMITATIONS.md``.
+* **v2.2** ships animation + timeline integration polish.
+  New ``animation/`` package with a frame-aware mission
+  state evaluator (``AnimatedSample`` per frame, including
+  navigator/camera positions, HPB rotation, optional FOV +
+  epoch, ``waypoint_index``, ``is_sync_marker`` flag). New
+  ``c4d_objects/timeline_markers.py`` drops UNAV-tagged
+  markers (waypoint / epoch / sync / science) onto the
+  Cinema 4D timeline; idempotent via the ``UNAV:`` name
+  prefix. Extended ``timeline_keys`` with
+  ``bake_mission_to_timeline`` — keyframes + markers in
+  one transactional pass; the bake never triggers the
+  visible-sector pipeline. ``Playback.evaluate_at_frame``
+  / ``evaluate_at_seconds`` for pure-read previews. Dialog
+  gains 5 new buttons + 2 new fields. Sync markers are
+  *requests*, not actions — see
+  ``SYNC_MARKERS_WORKFLOW.md``. **1592 Python tests pass.**
 
 ### Current limitations
 
