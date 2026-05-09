@@ -244,7 +244,19 @@ class CameraPathConfig:
 
 def _resolve_position(wp: MissionWaypoint) -> Optional[Tuple[float, float, float]]:
     if wp.has_c4d_position():
-        return (float(wp.x_c4d), float(wp.y_c4d), float(wp.z_c4d))
+        # v1.9: ``camera_offset`` shifts the camera's sample
+        # position away from the waypoint's anchor by a fixed
+        # (dx, dy, dz). Useful for "look at Mars from a few
+        # units behind" — the navigator still anchors at the
+        # waypoint, but the camera path samples the offset.
+        x = float(wp.x_c4d)
+        y = float(wp.y_c4d)
+        z = float(wp.z_c4d)
+        if wp.camera_offset is not None:
+            x += float(wp.camera_offset[0])
+            y += float(wp.camera_offset[1])
+            z += float(wp.camera_offset[2])
+        return (x, y, z)
     return None
 
 
@@ -309,6 +321,12 @@ def build_camera_path(
     cfg = config or CameraPathConfig()
     resolved: List[Tuple[int, MissionWaypoint, Tuple[float, float, float]]] = []
     for idx, wp in enumerate(mission.waypoints):
+        # v1.9: annotation waypoints are pure metadata; they
+        # never participate in the camera path. They are also
+        # not surfaced via ``on_unresolved`` because they have
+        # no resolution to attempt.
+        if not wp.is_path_contributing():
+            continue
         pos = _resolve_position(wp)
         if pos is None:
             if on_unresolved is not None:

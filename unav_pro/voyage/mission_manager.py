@@ -269,14 +269,202 @@ class MissionManager:
             if mid not in self._order:
                 self._order.append(mid)
 
+    # ---------------------------------------------------------- v1.9 organizer
+
+    def duplicate(
+        self, mission_id: str, *, new_title: Optional[str] = None,
+    ) -> Optional[Mission]:
+        """v1.9: copy a registered mission into a fresh one.
+
+        The duplicate gets a new ``mission_id`` and (by default)
+        a title prefixed with "Copy of "; the caller can override
+        via ``new_title``. Waypoints are deep-copied via JSON
+        round-trip so the new mission is fully detached from the
+        source."""
+        from .mission import _new_mission_id  # noqa: PLC0415
+        source = self.get(mission_id)
+        if source is None:
+            return None
+        clone = Mission.from_json(source.to_json())
+        clone.mission_id = _new_mission_id()
+        clone.title = new_title or f"Copy of {source.title}"
+        clone.created_iso = clone.modified_iso = source.modified_iso
+        return self.create(clone)
+
+    def rename(self, mission_id: str, new_title: str) -> bool:
+        """v1.9: rename a registered mission. Returns True on
+        success, False if the mission doesn't exist or the
+        title is empty."""
+        if not new_title or not new_title.strip():
+            return False
+        mission = self.get(mission_id)
+        if mission is None:
+            return False
+        mission.title = new_title.strip()
+        self.update(mission)
+        return True
+
+    def add_tags(self, mission_id: str, tags) -> bool:
+        """v1.9: add tags to a mission (deduplicated, case-
+        insensitive). Returns True on success."""
+        mission = self.get(mission_id)
+        if mission is None:
+            return False
+        existing = set(mission.tags)
+        added_any = False
+        for raw in tags or ():
+            tag = (str(raw) or "").strip().lower()
+            if tag and tag not in existing:
+                mission.tags.append(tag)
+                existing.add(tag)
+                added_any = True
+        if added_any:
+            self.update(mission)
+        return added_any
+
+    def remove_tag(self, mission_id: str, tag: str) -> bool:
+        """v1.9: drop a single tag from a mission. Returns True
+        if the tag was present."""
+        mission = self.get(mission_id)
+        if mission is None:
+            return False
+        target = (tag or "").strip().lower()
+        if target not in mission.tags:
+            return False
+        mission.tags = [t for t in mission.tags if t != target]
+        self.update(mission)
+        return True
+
+    def search(
+        self,
+        query: str = "",
+        *,
+        tag: Optional[str] = None,
+    ) -> List[Mission]:
+        """v1.9: filter the mission list by free-text query +
+        optional tag. Both are case-insensitive substring
+        matches; results preserve display order."""
+        q = (query or "").strip().lower()
+        t = (tag or "").strip().lower() if tag else None
+        out: List[Mission] = []
+        for mission in self.list_all():
+            if t and t not in (mission.tags or []):
+                continue
+            if q and not (
+                q in (mission.title or "").lower()
+                or q in (mission.description or "").lower()
+                or any(q in tg.lower() for tg in (mission.tags or []))
+            ):
+                continue
+            out.append(mission)
+        return out
+
+    def sort(self, *, by: str = "title", reverse: bool = False) -> None:
+        """v1.9: reorder the mission display list in place.
+
+        Supported keys (``by=``):
+
+        * ``title`` (default) — alphabetical by title.
+        * ``modified`` — most-recently-modified first
+          (when ``reverse=False``, that's normal order;
+          when ``reverse=True``, oldest-first).
+        * ``waypoints`` — by waypoint count.
+        * ``id`` — lexicographic by mission id.
+
+        Any other ``by`` value raises ``ValueError``. The
+        underlying mission set is not mutated; only the
+        display order changes."""
+        if by == "title":
+            keyer = lambda m: (m.title or "").lower()
+            invert = reverse
+        elif by == "modified":
+            keyer = lambda m: m.modified_iso or ""
+            invert = not reverse  # most-recent first by default
+        elif by == "waypoints":
+            keyer = lambda m: len(m.waypoints)
+            invert = reverse
+        elif by == "id":
+            keyer = lambda m: m.mission_id
+            invert = reverse
+        else:
+            raise ValueError(f"unknown sort key: {by!r}")
+        ordered = sorted(self.list_all(), key=keyer, reverse=invert)
+        self._order = [m.mission_id for m in ordered]
+        self._save_index()
+
+    # ---------------------------------------------------------- v1.9 packages
+
+    def export_package(self, path: str) -> int:
+        """v1.9: export every registered mission into a single
+        JSON file (a "package"). Returns the number of missions
+        written. Useful for backing up an entire library or
+        sharing it between machines.
+
+        The package format is intentionally simple — a top-
+        level dict with ``schema_version`` and ``missions``
+        keys — so a third-party reader can pull the contents
+        without the full ``MissionManager`` machinery."""
+        payload = {
+            "schema_version": 1,
+            "missions": [m.to_dict() for m in self.list_all()],
+        }
+        try:
+            from core.config import safe_write_json
+            safe_write_json(
+                path,
+                json.dumps(payload, sort_keys=True, indent=2),
+            )
+        except OSError as exc:
+            _log.warning("Could not write package %s: %s", path, exc)
+            return 0
+        return len(payload["missions"])
+
+    def import_package(self, path: str) -> int:
+        """v1.9: import every mission from a package JSON.
+
+        Each imported mission is registered with a fresh id
+        if it would collide with an existing entry, so the
+        operation is always non-destructive. Returns the
+        number of missions actually registered (parse failures
+        are logged + skipped)."""
+        from .mission import _new_mission_id  # noqa: PLC0415
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                payload = json.load(fh)
+        except (OSError, ValueError, TypeError) as exc:
+            _log.warning("Could not read package %s: %s", path, exc)
+            return 0
+        if not isinstance(payload, dict):
+            _log.warning("Package %s top-level is not an object.", path)
+            return 0
+        added = 0
+        for raw in payload.get("missions") or []:
+            if not isinstance(raw, dict):
+                _log.warning(
+                    "Skipping non-object mission entry in package %s.", path,
+                )
+                continue
+            try:
+                mission = Mission.from_dict(raw)
+            except (TypeError, ValueError) as exc:
+                _log.warning(
+                    "Skipping malformed mission in package %s: %s",
+                    path, exc,
+                )
+                continue
+            if mission.mission_id in self._missions:
+                mission.mission_id = _new_mission_id()
+            self.create(mission)
+            added += 1
+        return added
+
     def _save_mission(self, mission: Mission) -> None:
+        from core.config import safe_write_json
         os.makedirs(self._dir, exist_ok=True)
         path = _mission_path(self._dir, mission.mission_id)
-        try:
-            with open(path, "w", encoding="utf-8") as fh:
-                fh.write(mission.to_json())
-        except OSError as exc:
-            _log.warning("Could not write mission %s: %s", path, exc)
+        # Atomic write via the v1.7 helper so a crash mid-save
+        # cannot truncate the previous valid mission file.
+        safe_write_json(path, mission.to_json())
 
     def _save_index(self) -> None:
         os.makedirs(self._dir, exist_ok=True)

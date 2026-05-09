@@ -189,6 +189,68 @@ the dataset registry's `<entry.name>:` namespace layers on top.
 Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
 
+### O. Advanced Voyage Tools (v1.9)
+
+v1.9 makes UNAV a professional voyage-planning and
+animation-authoring tool inside Cinema 4D: richer waypoint
+kinds, ready-made templates, route analytics, mission
+organisation, annotation layers, and exporters.
+
+This is **not a rendering release**. v1.9 is navigation
+intelligence + animation planning. Every v1.4 / v1.8 mission
+file round-trips through v1.9 byte-identical; v1.9 fields are
+additive.
+
+What's new:
+
+* **Three new waypoint kinds** — ``search_result`` (uid +
+  the query that found it), ``orbital`` (placeholder for
+  epoch-driven bodies), ``annotation`` (pure metadata,
+  never participates in the camera path). Plus three new
+  optional fields on every kind: ``camera_offset``, ``tags``,
+  ``search_query``.
+* **Five voyage templates** — Solar System Tour, Nearest
+  Stars Tour, Redshift Tour, Empty Voyage, Selected Objects
+  Tour. Editable, not locked. The dialog's **Template** combo
+  + **New From Template** button creates them.
+* **Route analytics** — ``analyse_route(mission)`` computes
+  segment distances, totals, ETAs, kind / type / source
+  histograms, and epoch-consistency warnings. The dialog's
+  **Route Analytics** button prints the report.
+* **Mission organizer** — ``MissionManager`` gains
+  ``duplicate``, ``rename``, ``add_tags`` / ``remove_tag``,
+  ``search``, ``sort``, and full-library
+  ``export_package`` / ``import_package``. Per-mission file
+  writes route through v1.7's atomic ``safe_write_json``.
+* **Annotation system** — three layers (waypoint / scene /
+  mission). New ``SceneAnnotation`` dataclass + helpers,
+  ``derive_notes(waypoint)`` synthesises plain-text prose
+  from a waypoint's metadata.
+* **Exporters** — ``mission_to_markdown`` (publication-style
+  summary with route analytics + annotations) and
+  ``mission_to_csv`` (one row per waypoint; spreadsheet-
+  friendly). Both writers are atomic.
+* **Dialog wiring** — Missions tab gains template picker +
+  **New From Template**, **Duplicate Mission**,
+  **Route Analytics**, **Export Markdown…** / **Export CSV…**,
+  **Filter** + search input.
+* **Tests** — `test_v19_waypoint_kinds`,
+  `test_v19_templates`, `test_v19_route_analytics`,
+  `test_v19_organizer`, `test_v19_annotations_export` cover
+  every surface (95 new tests). **1421 Python tests pass.**
+
+Walkthroughs:
+[`docs/V1_9_ADVANCED_VOYAGE_TOOLS.md`](docs/V1_9_ADVANCED_VOYAGE_TOOLS.md)
+— milestone summary,
+[`docs/VOYAGE_TEMPLATES.md`](docs/VOYAGE_TEMPLATES.md) — the
+five bundled templates + how to add new ones,
+[`docs/ROUTE_ANALYTICS.md`](docs/ROUTE_ANALYTICS.md) —
+analytics formula + warning conditions,
+[`docs/MISSION_ORGANIZER.md`](docs/MISSION_ORGANIZER.md) —
+duplicate / rename / tag / search / sort / packages,
+[`docs/ANNOTATION_SYSTEM.md`](docs/ANNOTATION_SYSTEM.md) —
+the three annotation layers + metadata-derived notes.
+
 ### N. Cinematic Navigation Polish (v1.8)
 
 v1.8 polishes UNAV's v1.4 voyage system into a practical
@@ -720,6 +782,11 @@ the plugin's package layout is documented in [`docs/PLUGIN_STRUCTURE.md`](docs/P
 * [`docs/CAMERA_PATH_AUTHORING.md`](docs/CAMERA_PATH_AUTHORING.md) — authoring deep-dive (waypoint additions, interpolation modes, tessellation).
 * [`docs/TIMELINE_BAKING.md`](docs/TIMELINE_BAKING.md) — Cinema 4D keyframe baking contract (frame mapping, FPS, HPB conversion, decoupling from sector sync).
 * [`docs/MISSION_PLAYBACK_POLISH.md`](docs/MISSION_PLAYBACK_POLISH.md) — new transport methods + scrub-slider integration + side-effect-free evaluation.
+* [`docs/V1_9_ADVANCED_VOYAGE_TOOLS.md`](docs/V1_9_ADVANCED_VOYAGE_TOOLS.md) — v1.9 milestone summary: new waypoint kinds, templates, analytics, organizer, annotations, exporters.
+* [`docs/VOYAGE_TEMPLATES.md`](docs/VOYAGE_TEMPLATES.md) — the five bundled mission templates + extension guide.
+* [`docs/ROUTE_ANALYTICS.md`](docs/ROUTE_ANALYTICS.md) — distance / ETA / histogram / epoch-warning report contract.
+* [`docs/MISSION_ORGANIZER.md`](docs/MISSION_ORGANIZER.md) — duplicate / rename / tag / search / sort / package import-export.
+* [`docs/ANNOTATION_SYSTEM.md`](docs/ANNOTATION_SYSTEM.md) — three annotation layers + metadata-derived notes.
 
 Per-feature deep docs:
 [`UNAV_PRO_ARCHITECTURE`](docs/UNAV_PRO_ARCHITECTURE.md) ·
@@ -858,6 +925,24 @@ the per-milestone phasing is in
   Visible-sector generation stays decoupled from animation.
   No render-engine assumptions; no IPC. **1326 Python
   tests pass.**
+* **v1.9** ships advanced voyage tools. Three new
+  ``MissionWaypoint`` kinds (``search_result``, ``orbital``,
+  ``annotation``) plus three optional fields
+  (``camera_offset``, ``tags``, ``search_query``). Five
+  ready-to-edit templates (``solar_system_tour``,
+  ``nearest_stars_tour``, ``redshift_tour``, ``empty_voyage``,
+  ``selected_objects_tour``). New ``voyage/route_analytics``
+  module computes per-segment distances, ETA, histograms,
+  and epoch-consistency warnings. ``MissionManager`` gains
+  duplicate / rename / tag / search / sort + full-library
+  package import/export. New ``voyage/annotations`` module
+  with three annotation layers + a metadata-derived note
+  synthesiser. New ``voyage/export`` module: Markdown +
+  CSV exporters, both atomic. Dialog gains template picker,
+  Duplicate / Analytics / Export Markdown / Export CSV /
+  Filter buttons. Visible-sector pipeline + v1.8 timeline
+  baking are unchanged. No rendering, no IPC. **1421
+  Python tests pass.**
 
 ### Current limitations
 

@@ -26,8 +26,50 @@ from .mission import (
     MAX_WAYPOINTS_PER_MISSION,
     MISSION_SCHEMA_VERSION,
     MISSION_WAYPOINT_KINDS,
+    PATH_CONTRIBUTING_KINDS,
     Mission,
     MissionWaypoint,
+)
+from .annotations import (
+    MissionAnnotations,
+    SceneAnnotation,
+    WaypointAnnotation,
+    add_scene_annotation,
+    build_mission_annotations,
+    derive_notes,
+    get_scene_annotations,
+    remove_scene_annotation_at,
+)
+from .export import (
+    CSV_FIELDS,
+    mission_to_csv,
+    mission_to_json_file,
+    mission_to_markdown,
+    write_csv,
+    write_markdown,
+)
+from .route_analytics import (
+    DEFAULT_TRAVEL_SPEED_PC_PER_S,
+    EPOCH_SPREAD_WARN_THRESHOLD_DAYS,
+    RouteAnalytics,
+    SegmentMetric,
+    analyse_route,
+)
+from .templates import (
+    DEFAULT_TEMPLATE_EPOCH_ISO,
+    DEFAULT_TEMPLATE_EPOCH_JD,
+    NEAREST_STARS,
+    REDSHIFT_ANCHORS,
+    SOLAR_SYSTEM_BODIES,
+    TEMPLATE_REGISTRY,
+    TemplateDescriptor,
+    empty_voyage,
+    get_template,
+    list_templates,
+    nearest_stars_tour,
+    redshift_tour,
+    selected_objects_tour,
+    solar_system_tour,
 )
 from .mission_manager import (
     MISSIONS_DIRNAME,

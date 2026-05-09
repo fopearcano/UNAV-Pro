@@ -159,6 +159,16 @@ _ID_BAKE_END_FRAME = 10461
 _ID_BAKE_FPS = 10462
 _ID_INTERP_MODE = 10463
 
+# v1.9 advanced-voyage controls.
+_ID_TEMPLATE_PICKER = 10470
+_ID_BTN_TEMPLATE_NEW = 10471
+_ID_BTN_MISSION_DUPLICATE = 10472
+_ID_BTN_MISSION_ANALYTICS = 10473
+_ID_BTN_MISSION_EXPORT_MD = 10474
+_ID_BTN_MISSION_EXPORT_CSV = 10475
+_ID_MISSION_SEARCH_INPUT = 10476
+_ID_BTN_MISSION_SEARCH = 10477
+
 
 if _C4D_AVAILABLE:
 
@@ -642,6 +652,32 @@ if _C4D_AVAILABLE:
             self.AddButton(_ID_BTN_MISSION_BAKE, c4d.BFH_SCALEFIT, name="Bake to Timeline")
             self.GroupEnd()
 
+            # v1.9 advanced-voyage row: templates + analytics +
+            # exports + search.
+            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=4, rows=1)
+            self.AddStaticText(0, c4d.BFH_LEFT, name="Template")
+            self.AddComboBox(_ID_TEMPLATE_PICKER, c4d.BFH_SCALEFIT)
+            try:
+                from voyage import list_templates
+                for i, t in enumerate(list_templates()):
+                    self.AddChild(_ID_TEMPLATE_PICKER, i, t.label)
+                self.SetInt32(_ID_TEMPLATE_PICKER, 0)
+            except Exception:  # noqa: BLE001
+                pass
+            self.AddButton(_ID_BTN_TEMPLATE_NEW, c4d.BFH_SCALEFIT, name="New From Template")
+            self.AddButton(_ID_BTN_MISSION_DUPLICATE, c4d.BFH_SCALEFIT, name="Duplicate Mission")
+            self.GroupEnd()
+            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=4, rows=1)
+            self.AddButton(_ID_BTN_MISSION_ANALYTICS, c4d.BFH_SCALEFIT, name="Route Analytics")
+            self.AddButton(_ID_BTN_MISSION_EXPORT_MD, c4d.BFH_SCALEFIT, name="Export Markdown…")
+            self.AddButton(_ID_BTN_MISSION_EXPORT_CSV, c4d.BFH_SCALEFIT, name="Export CSV…")
+            self.AddButton(_ID_BTN_MISSION_SEARCH, c4d.BFH_SCALEFIT, name="Filter")
+            self.GroupEnd()
+            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=2, rows=1)
+            self.AddStaticText(0, c4d.BFH_LEFT, name="Search missions")
+            self.AddEditText(_ID_MISSION_SEARCH_INPUT, c4d.BFH_SCALEFIT)
+            self.GroupEnd()
+
             self.AddStaticText(
                 _ID_PLAYBACK_STATUS, c4d.BFH_SCALEFIT,
                 name="(no mission loaded)",
@@ -911,6 +947,18 @@ if _C4D_AVAILABLE:
                     self._do_mission_clear_preview()
                 elif mid == _ID_BTN_MISSION_BAKE:
                     self._do_mission_bake_timeline()
+                elif mid == _ID_BTN_TEMPLATE_NEW:
+                    self._do_mission_new_from_template()
+                elif mid == _ID_BTN_MISSION_DUPLICATE:
+                    self._do_mission_duplicate()
+                elif mid == _ID_BTN_MISSION_ANALYTICS:
+                    self._do_mission_analytics()
+                elif mid == _ID_BTN_MISSION_EXPORT_MD:
+                    self._do_mission_export_markdown()
+                elif mid == _ID_BTN_MISSION_EXPORT_CSV:
+                    self._do_mission_export_csv()
+                elif mid == _ID_BTN_MISSION_SEARCH:
+                    self._do_mission_search()
             except Exception as exc:  # noqa: BLE001 — UI boundary handler
                 _log.exception("Dialog command %s failed", mid)
                 self._append_log(f"ERROR: {exc!r}")
@@ -1992,6 +2040,144 @@ if _C4D_AVAILABLE:
                 f"Mission: {generate_bake_report(records, fr).summary_line()} "
                 f"({written} key writes)"
             )
+
+        # --- v1.9 advanced-voyage helpers ---
+
+        def _do_mission_new_from_template(self) -> None:
+            """v1.9: build a new mission from the picked template
+            and register it via the existing manager."""
+            from voyage import get_template, list_templates
+            mgr = self._ensure_mission_manager()
+            try:
+                idx = int(self.GetInt32(_ID_TEMPLATE_PICKER))
+            except Exception:  # noqa: BLE001
+                idx = 0
+            templates = list_templates()
+            if not (0 <= idx < len(templates)):
+                self._append_log("Mission: invalid template index.")
+                return
+            descriptor = templates[idx]
+            try:
+                mission = descriptor.builder()
+            except TypeError as exc:
+                # selected_objects_tour requires uids; fall back to
+                # an empty voyage if the dialog can't supply them.
+                self._append_log(
+                    f"Mission: template '{descriptor.name}' needs "
+                    f"arguments ({exc}); created an empty voyage instead."
+                )
+                from voyage import empty_voyage
+                mission = empty_voyage(title=f"From {descriptor.label}")
+            mgr.create(mission)
+            self._active_mission_id = mission.mission_id
+            self._append_log(
+                f"Mission: created '{mission.title}' from "
+                f"template '{descriptor.name}' "
+                f"({len(mission.waypoints)} waypoint(s))."
+            )
+            self._refresh_mission_panels()
+
+        def _do_mission_duplicate(self) -> None:
+            mission = self._active_mission()
+            if mission is None:
+                self._append_log("Mission: select a mission first.")
+                return
+            mgr = self._ensure_mission_manager()
+            clone = mgr.duplicate(mission.mission_id)
+            if clone is None:
+                self._append_log("Mission: duplicate failed.")
+                return
+            self._active_mission_id = clone.mission_id
+            self._append_log(
+                f"Mission: duplicated → '{clone.title}'."
+            )
+            self._refresh_mission_panels()
+
+        def _do_mission_analytics(self) -> None:
+            from voyage import analyse_route
+            mission = self._active_mission()
+            if mission is None:
+                self._append_log("Mission: select a mission first.")
+                return
+            report = analyse_route(mission)
+            self._append_log(report.render_text())
+
+        def _do_mission_export_markdown(self) -> None:
+            from voyage import write_markdown
+            mission = self._active_mission()
+            if mission is None:
+                self._append_log("Mission: select a mission first.")
+                return
+            try:
+                path = c4d.storage.LoadDialog(
+                    title="Export Mission Markdown",
+                    flags=c4d.FILESELECT_SAVE,
+                )
+            except Exception:  # noqa: BLE001
+                path = None
+            if not path:
+                self._append_log("Mission: Markdown export cancelled.")
+                return
+            ok = write_markdown(mission, path)
+            self._append_log(
+                f"Mission: wrote Markdown to {path}." if ok
+                else f"Mission: Markdown write failed for {path}."
+            )
+
+        def _do_mission_export_csv(self) -> None:
+            from voyage import write_csv
+            mission = self._active_mission()
+            if mission is None:
+                self._append_log("Mission: select a mission first.")
+                return
+            try:
+                path = c4d.storage.LoadDialog(
+                    title="Export Mission Waypoints CSV",
+                    flags=c4d.FILESELECT_SAVE,
+                )
+            except Exception:  # noqa: BLE001
+                path = None
+            if not path:
+                self._append_log("Mission: CSV export cancelled.")
+                return
+            ok = write_csv(mission, path)
+            self._append_log(
+                f"Mission: wrote CSV to {path}." if ok
+                else f"Mission: CSV write failed for {path}."
+            )
+
+        def _do_mission_search(self) -> None:
+            """v1.9: filter the mission list by free-text query
+            and re-render the panel verbatim. The dialog's list
+            stays the live mission set; only the *displayed*
+            text is filtered."""
+            from ui.mission_panel import render_mission_list
+            mgr = self._ensure_mission_manager()
+            query = (self.GetString(_ID_MISSION_SEARCH_INPUT) or "").strip()
+            results = mgr.search(query) if query else mgr.list_all()
+            count = len(results)
+            if count == 0:
+                self._append_log(
+                    f"Mission search '{query}': 0 matches."
+                )
+                self.SetString(
+                    _ID_MISSIONS_LIST,
+                    f"No missions matching '{query}'.",
+                )
+                return
+            # Render a search-scoped subset.
+            lines = [f"=== Missions matching '{query}' ({count}) ==="]
+            for i, m in enumerate(results):
+                line = (
+                    f"  [{i}] {m.title}  "
+                    f"({len(m.waypoints)} wp, "
+                    f"{m.total_duration_seconds():.1f}s)"
+                )
+                if m.tags:
+                    line += f"  [{', '.join(m.tags)}]"
+                lines.append(line)
+            self.SetString(_ID_MISSIONS_LIST, "\n".join(lines))
+            self._append_log(f"Mission search '{query}': {count} match(es).")
 
         # The dataset manager dialog is async and persistent: we
         # keep one instance per session so re-clicking the menu
