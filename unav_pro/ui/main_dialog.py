@@ -838,7 +838,14 @@ if _C4D_AVAILABLE:
             from ui.metadata_panel import empty_panel_text
             from ui.search_panel import empty_panel_text as search_empty
 
-            self._append_log(f"{self.TITLE} ready.")
+            try:
+                from version import get_version_info
+                self._append_log(
+                    f"{self.TITLE} ready — "
+                    + get_version_info().display_line()
+                )
+            except Exception:  # noqa: BLE001
+                self._append_log(f"{self.TITLE} ready.")
             self.SetString(_ID_META_PANEL, empty_panel_text())
             self._route = Route()
             from ui.route_panel import empty_panel_text as rt_empty

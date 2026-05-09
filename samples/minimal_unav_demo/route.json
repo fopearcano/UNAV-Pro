@@ -1,0 +1,23 @@
+{
+  "name": "UNAV Demo Route",
+  "waypoints": [
+    {
+      "kind": "object", "label": "Origin Star",
+      "uid": "demo:1", "catalog_source": "UNAV Demo", "object_type": "star",
+      "x_c4d": 1.0, "y_c4d": 0.0, "z_c4d": 0.0,
+      "x_pc": 1.0, "y_pc": 0.0, "z_pc": 0.0
+    },
+    {
+      "kind": "object", "label": "Demo Planet",
+      "uid": "demo:5", "catalog_source": "UNAV Demo", "object_type": "planet",
+      "x_c4d": 0.34, "y_c4d": 0.34, "z_c4d": 0.13,
+      "x_pc": 0.34, "y_pc": 0.34, "z_pc": 0.13
+    },
+    {
+      "kind": "object", "label": "Right Star",
+      "uid": "demo:2", "catalog_source": "UNAV Demo", "object_type": "star",
+      "x_c4d": 0.0, "y_c4d": 2.0, "z_c4d": 0.0,
+      "x_pc": 0.0, "y_pc": 2.0, "z_pc": 0.0
+    }
+  ]
+}

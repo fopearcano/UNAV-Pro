@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "mission_id": "demo000000000001",
+  "title": "UNAV Demo Mission",
+  "description": "Five-stop tour through the bundled demo catalog. Safe to load without external data.",
+  "tags": ["demo", "template"],
+  "created_iso": "2026-01-01T00:00:00Z",
+  "modified_iso": "2026-01-01T00:00:00Z",
+  "waypoints": [
+    {
+      "kind": "coordinate",
+      "label": "Sun (origin)",
+      "x_c4d": 0.0, "y_c4d": 0.0, "z_c4d": 0.0,
+      "x_pc": 0.0, "y_pc": 0.0, "z_pc": 0.0,
+      "duration_seconds": 3.0,
+      "tags": ["demo"]
+    },
+    {
+      "kind": "object",
+      "label": "Origin Star",
+      "uid": "demo:1",
+      "catalog_source": "UNAV Demo",
+      "object_type": "star",
+      "x_c4d": 1.0, "y_c4d": 0.0, "z_c4d": 0.0,
+      "x_pc": 1.0, "y_pc": 0.0, "z_pc": 0.0,
+      "duration_seconds": 3.0,
+      "tags": ["demo", "star"]
+    },
+    {
+      "kind": "object",
+      "label": "Demo Planet",
+      "uid": "demo:5",
+      "catalog_source": "UNAV Demo",
+      "object_type": "planet",
+      "x_c4d": 0.34, "y_c4d": 0.34, "z_c4d": 0.13,
+      "x_pc": 0.34, "y_pc": 0.34, "z_pc": 0.13,
+      "duration_seconds": 4.0,
+      "epoch_jd": 2461041.5,
+      "tags": ["demo", "planet"]
+    },
+    {
+      "kind": "object",
+      "label": "Right Star",
+      "uid": "demo:2",
+      "catalog_source": "UNAV Demo",
+      "object_type": "star",
+      "x_c4d": 0.0, "y_c4d": 2.0, "z_c4d": 0.0,
+      "x_pc": 0.0, "y_pc": 2.0, "z_pc": 0.0,
+      "duration_seconds": 3.0,
+      "tags": ["demo", "star"]
+    },
+    {
+      "kind": "object",
+      "label": "Demo Galaxy",
+      "uid": "demo:4",
+      "catalog_source": "UNAV Demo",
+      "object_type": "galaxy",
+      "x_c4d": 0.0, "y_c4d": -4.33, "z_c4d": 2.5,
+      "x_pc": 0.0, "y_pc": -4.33, "z_pc": 2.5,
+      "duration_seconds": 5.0,
+      "tags": ["demo", "galaxy"]
+    }
+  ]
+}

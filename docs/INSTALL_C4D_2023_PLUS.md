@@ -5,9 +5,13 @@ This guide covers installing the UNAV Pro Python plugin into Cinema 4D
 the ``unav_pro/`` directory in this repository — there is no compiled
 binary to build for the Python prototype.
 
-> **Status:** MVP skeleton. The plugin registers a single menu command
-> ("Universal Navigator Pro") that opens a control dialog with mock
-> actions. No real catalog data is wired up yet.
+> **Status (v2.4):** Production. The plugin registers
+> ``Extensions → Universal Navigator Pro`` with a full
+> dialog (search / bookmarks / navigation / missions /
+> overlays). For the five-minute install + smoke-test
+> walkthrough, see [`QUICK_START.md`](QUICK_START.md).
+> For diagnosis when something goes wrong, see
+> [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 
 ---
 

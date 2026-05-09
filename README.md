@@ -189,6 +189,60 @@ the dataset registry's `<entry.name>:` namespace layers on top.
 Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
 
+### T. Production QA & Packaging (v2.4)
+
+v2.4 turns the v2.3 codebase into something an artist can
+install, sanity-check, and uninstall cleanly. **Release
+engineering, not features.** No new navigation or rendering;
+every change is reliability, packaging, or documentation.
+
+What's new:
+
+* **`unav_pro/version.py`** — single source of truth for
+  the plugin version string. Surfaced in the dialog log,
+  the export manifest, the packaging script.
+* **`unav_pro/core/health_check.py`** — eight pre-flight
+  probes (version, config dir, cache dir, dataset registry,
+  sample catalog, DB module, voyage import, export import).
+  Surfaced in the diagnostics panel via a new **Run Health
+  Check** button.
+* **`scripts/package_plugin.py`** — deterministic release-
+  zip builder with required-file allowlist, exclude-fragment
+  list, and a 5 MB per-file size cap. Output:
+  `dist/unav_pro-<version>.zip`.
+* **`scripts/run_tests.py`** — one-script test runner that
+  classifies every `test_*.py` by category (state /
+  animation / voyage / knowledge / overlays / science /
+  export / v18 / v19 / release / other).
+* **`dist/README.md`** — release-zip consumer guide.
+* **`samples/minimal_unav_demo/`** — tiny self-contained
+  catalog (5 rows) + mission JSON + route JSON + 30-second
+  walkthrough README. Total budget under a few KB per file;
+  ships in every release zip.
+* **Doc refresh** — `docs/INSTALL_C4D_2023_PLUS.md`,
+  new `docs/QUICK_START.md`, new `docs/TROUBLESHOOTING.md`.
+  Three new docs: `V2_4_RELEASE_PREP.md`, `PACKAGING.md`,
+  `QA_CHECKLIST.md`.
+* **Release artefacts** — `RELEASE_NOTES_v2.4.md`,
+  CHANGELOG entry, dialog status line shows the version on
+  every open.
+* **Tests** — `test_v24_version`, `test_v24_health_check`,
+  `test_v24_packaging`, `test_v24_sample_demo`,
+  `test_v24_run_tests`. 84 new tests; **1733 Python tests
+  pass.**
+
+Walkthroughs:
+[`docs/V2_4_RELEASE_PREP.md`](docs/V2_4_RELEASE_PREP.md) —
+milestone summary,
+[`docs/PACKAGING.md`](docs/PACKAGING.md) — release-zip
+mechanics + include / exclude rules,
+[`docs/QA_CHECKLIST.md`](docs/QA_CHECKLIST.md) — pre-publish
+ritual,
+[`docs/QUICK_START.md`](docs/QUICK_START.md) — five-minute
+install + smoke test,
+[`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) —
+common fixes.
+
 ### S. Export Pipelines & Interchange (v2.3)
 
 v2.3 makes UNAV's data **shareable**. Voyages, routes,
@@ -1042,6 +1096,11 @@ the plugin's package layout is documented in [`docs/PLUGIN_STRUCTURE.md`](docs/P
 * [`docs/EXPORT_PACKAGE_FORMAT.md`](docs/EXPORT_PACKAGE_FORMAT.md) — package directory layout + manifest schema + versioning.
 * [`docs/CAMERA_PATH_INTERCHANGE.md`](docs/CAMERA_PATH_INTERCHANGE.md) — DCC-agnostic camera JSON + units block + HPB convention.
 * [`docs/DATASET_SUMMARY_EXPORT.md`](docs/DATASET_SUMMARY_EXPORT.md) — dataset summary structure + reading outside UNAV.
+* [`docs/V2_4_RELEASE_PREP.md`](docs/V2_4_RELEASE_PREP.md) — v2.4 release-engineering milestone summary.
+* [`docs/PACKAGING.md`](docs/PACKAGING.md) — release-zip mechanics + include / exclude rules + required-file allowlist.
+* [`docs/QA_CHECKLIST.md`](docs/QA_CHECKLIST.md) — pre-publish ritual every release runs through.
+* [`docs/QUICK_START.md`](docs/QUICK_START.md) — five-minute install + smoke test.
+* [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) — common fixes for install / sync / bake / export issues.
 
 Per-feature deep docs:
 [`UNAV_PRO_ARCHITECTURE`](docs/UNAV_PRO_ARCHITECTURE.md) ·
@@ -1259,8 +1318,23 @@ the per-milestone phasing is in
   per-frame position + HPB rotation + optional FOV +
   optional epoch + waypoint index, with a units block).
   Dialog gains six Export buttons. Mission titles with
-  illegal filename chars are sanitised. **1649 Python
-  tests pass.**
+  illegal filename chars are sanitised.
+* **v2.4** is the release-engineering milestone. Adds
+  `unav_pro/version.py` (single source of truth for the
+  plugin version), `core/health_check.py` (eight pre-flight
+  probes with diagnostic-panel surface), `scripts/package_plugin.py`
+  (deterministic release-zip builder with required-file
+  allowlist + exclude-fragment list + 5 MB size cap),
+  `scripts/run_tests.py` (one-script test runner with
+  category classification), `samples/minimal_unav_demo/`
+  (tiny self-contained catalog + mission + route +
+  walkthrough README; ships in every release zip),
+  `RELEASE_NOTES_v2.4.md` + CHANGELOG entry. Refreshed
+  install docs (`INSTALL_C4D_2023_PLUS.md`, `QUICK_START.md`,
+  `TROUBLESHOOTING.md`) + three new release-engineering
+  docs (`V2_4_RELEASE_PREP.md`, `PACKAGING.md`,
+  `QA_CHECKLIST.md`). Dialog status line shows the version
+  on every open. **1733 Python tests pass.**
 
 ### Current limitations
 

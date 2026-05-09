@@ -53,6 +53,9 @@ _ID_BTN_REFRESH = 301
 _ID_BTN_COPY = 302
 _ID_BTN_OPEN_LOG_DIR = 303
 _ID_BTN_CLEAR = 304
+#: v2.4: surfaces ``run_health_check`` in the diagnostics
+#: panel so the artist can verify the install in one click.
+_ID_BTN_HEALTH_CHECK = 305
 _COMBO_BASE = 1_000_010
 
 _LEVEL_OPTIONS = (
@@ -182,7 +185,7 @@ if _C4D_AVAILABLE:
 
             # Buttons row.
             self.GroupBegin(
-                _ID_GROUP_BUTTONS, c4d.BFH_SCALEFIT, cols=4, rows=1,
+                _ID_GROUP_BUTTONS, c4d.BFH_SCALEFIT, cols=5, rows=1,
                 title="Actions",
             )
             self.GroupBorderSpace(8, 8, 8, 8)
@@ -190,6 +193,10 @@ if _C4D_AVAILABLE:
             self.AddButton(_ID_BTN_COPY, c4d.BFH_SCALEFIT, name="Copy Diagnostics")
             self.AddButton(_ID_BTN_OPEN_LOG_DIR, c4d.BFH_SCALEFIT, name="Open Log Folder")
             self.AddButton(_ID_BTN_CLEAR, c4d.BFH_SCALEFIT, name="Clear Recent Logs")
+            # v2.4: surfaces the v2.4 ``run_health_check`` so
+            # the artist can verify the install without
+            # leaving the host.
+            self.AddButton(_ID_BTN_HEALTH_CHECK, c4d.BFH_SCALEFIT, name="Run Health Check")
             self.GroupEnd()
             return True
 
@@ -237,6 +244,13 @@ if _C4D_AVAILABLE:
 
                     clear_recent_logs()
                     self._refresh()
+                elif mid == _ID_BTN_HEALTH_CHECK:
+                    # v2.4: drop the health-check report into
+                    # the diagnostics panel verbatim so the
+                    # artist can copy it into a bug report
+                    # without leaving the dialog.
+                    from core.health_check import run_health_check
+                    self.SetString(_ID_PANEL, run_health_check().render())
             except Exception as exc:  # noqa: BLE001 — UI boundary
                 _log.exception("DiagnosticsDialog command %s failed", mid)
                 self.SetString(_ID_PANEL, f"ERROR: {exc!r}")

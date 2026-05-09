@@ -1,0 +1,5 @@
+{"uid": "demo:1", "catalog_source": "UNAV Demo", "object_type": "star", "ra_deg": 0.0, "dec_deg": 0.0, "distance_parsec": 1.0, "apparent_magnitude": 1.0, "name": "Origin Star", "metadata_json": "{}"}
+{"uid": "demo:2", "catalog_source": "UNAV Demo", "object_type": "star", "ra_deg": 90.0, "dec_deg": 0.0, "distance_parsec": 2.0, "apparent_magnitude": 2.0, "name": "Right Star", "metadata_json": "{}"}
+{"uid": "demo:3", "catalog_source": "UNAV Demo", "object_type": "star", "ra_deg": 180.0, "dec_deg": 0.0, "distance_parsec": 3.0, "apparent_magnitude": 3.0, "name": "Far Star", "metadata_json": "{}"}
+{"uid": "demo:4", "catalog_source": "UNAV Demo", "object_type": "galaxy", "ra_deg": 270.0, "dec_deg": 30.0, "distance_parsec": 5.0, "redshift": 0.001, "apparent_magnitude": 5.0, "name": "Demo Galaxy", "metadata_json": "{\"distance_method\": \"explicit\"}"}
+{"uid": "demo:5", "catalog_source": "UNAV Demo", "object_type": "planet", "ra_deg": 45.0, "dec_deg": 15.0, "distance_parsec": 0.5, "apparent_magnitude": -1.0, "name": "Demo Planet", "metadata_json": "{\"body\": \"DemoPlanet\", \"epoch\": \"2026-01-01T00:00:00\"}"}

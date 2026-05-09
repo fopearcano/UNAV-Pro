@@ -4,6 +4,45 @@ All notable changes to UNAV Pro are tracked here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [2.4.0] — Production QA & Packaging
+
+Release-engineering milestone. No new navigation or rendering
+features; every change is reliability, packaging, or
+documentation.
+
+### Added
+
+* `unav_pro/version.py` — single source of truth for the
+  plugin version string. Surfaced in the dialog log, the
+  export manifest, and the packaging script.
+* `unav_pro/core/health_check.py` — pre-flight diagnostics
+  that verify plugin paths, config / cache writability,
+  dataset registry, sample data, DB availability. Exposed
+  in the diagnostics panel.
+* `scripts/package_plugin.py` — release-zip builder that
+  excludes tests / cache / generated data / heavy
+  catalogs and validates contents.
+* `scripts/run_tests.py` — one-script test runner.
+* `dist/README.md` — release-zip consumer guide.
+* `samples/minimal_unav_demo/` — tiny catalog + mission +
+  route + README, safe to ship in the release zip.
+* `RELEASE_NOTES_v2.4.md` — this milestone's release notes.
+* New docs: `V2_4_RELEASE_PREP.md`, `PACKAGING.md`,
+  `QA_CHECKLIST.md`.
+
+### Changed
+
+* `INSTALL_C4D_2023_PLUS.md`, `QUICK_START.md`, and
+  `TROUBLESHOOTING.md` refreshed for the v2.4 install flow.
+
+### Unchanged
+
+* Every v1.x + v2.0–v2.3 feature surface is preserved.
+* On-disk schemas (missions, routes, package manifests,
+  camera exchange, dataset summary, science layers, overlay
+  settings) round-trip byte-identical.
+* DB schema v2, binary v3, mission schema v1 are unchanged.
+
 ## [0.1.0] — Universal Navigator Pro (Python prototype)
 
 The first milestone release: a working C4D 2023+ Python plugin
