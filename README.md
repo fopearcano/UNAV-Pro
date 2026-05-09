@@ -189,6 +189,59 @@ the dataset registry's `<entry.name>:` namespace layers on top.
 Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
 
+### P. Procedural Authoring Tools (v2.0)
+
+v2.0 adds **procedural overlays** — navigation aids the
+artist drops into the Cinema 4D scene without polluting the
+real catalog data: coordinate grids, galactic / ecliptic
+planes, distance rings, sector cone, route corridor, waypoint
+labels.
+
+This is **not a render engine**. v2.0 is authoring +
+navigation support. Overlays sit under their own
+``UNAV_Overlays`` root null and are siblings of the v0.1
+``UNAV_Starfield`` — the visible-sector pipeline never sees
+them and they cannot interfere with rendering or with dataset
+objects.
+
+What's new:
+
+* **`procedural/overlays.py`** — pure-Python overlay
+  computation. ``OverlaySettings`` dataclass + per-kind
+  builders + ``build_overlay_bundle`` aggregator. Seven
+  overlay kinds: `grid` / `galactic_plane` / `ecliptic_plane`
+  / `distance_rings` / `sector_cone` / `route_corridor` /
+  `waypoint_labels`.
+* **`procedural/dataset_helpers.py`** — ``compute_bounding_sphere``
+  (centroid + farthest-point radius), ``compute_source_distribution``
+  (per-source / per-type histograms), plus placeholder helpers
+  for the v2.x density-heatmap and redshift-shell overlays.
+* **`c4d_objects/overlays_builder.py`** — c4d-bound applier.
+  **Idempotent**: re-build replaces the per-kind containers
+  in place; no scene-object duplication. Empty bundle drops
+  the entire overlays subtree.
+* **`core/project_state.py`** — new `overlays` dict on
+  `ProjectState`. Overlay visibility + sizing round-trip
+  through the per-scene sidecar via "Save UNAV State" /
+  "Load UNAV State".
+* **Dialog** — new **Overlays** tab with seven show/hide
+  checkboxes, a radius scrubber, and **Build / Refresh** +
+  **Clear Overlays** transports.
+* **Tests** — ``test_v20_overlays`` (settings + math),
+  ``test_v20_dataset_helpers`` (bounding sphere / source
+  distribution / placeholders), ``test_v20_overlays_builder``
+  (parent + container naming, no-c4d safety),
+  ``test_v20_persistence`` (project-state round-trip). 64
+  new tests; **1485 Python tests pass.**
+
+Walkthroughs:
+[`docs/V2_0_PROCEDURAL_AUTHORING_TOOLS.md`](docs/V2_0_PROCEDURAL_AUTHORING_TOOLS.md)
+— milestone summary,
+[`docs/OVERLAYS_SYSTEM.md`](docs/OVERLAYS_SYSTEM.md) —
+seven overlay kinds + math + idempotency contract,
+[`docs/DATASET_DERIVED_HELPERS.md`](docs/DATASET_DERIVED_HELPERS.md)
+— bounding-sphere / source-distribution / placeholder helpers.
+
 ### O. Advanced Voyage Tools (v1.9)
 
 v1.9 makes UNAV a professional voyage-planning and
@@ -787,6 +840,9 @@ the plugin's package layout is documented in [`docs/PLUGIN_STRUCTURE.md`](docs/P
 * [`docs/ROUTE_ANALYTICS.md`](docs/ROUTE_ANALYTICS.md) — distance / ETA / histogram / epoch-warning report contract.
 * [`docs/MISSION_ORGANIZER.md`](docs/MISSION_ORGANIZER.md) — duplicate / rename / tag / search / sort / package import-export.
 * [`docs/ANNOTATION_SYSTEM.md`](docs/ANNOTATION_SYSTEM.md) — three annotation layers + metadata-derived notes.
+* [`docs/V2_0_PROCEDURAL_AUTHORING_TOOLS.md`](docs/V2_0_PROCEDURAL_AUTHORING_TOOLS.md) — v2.0 milestone summary: procedural overlays, dataset-derived helpers, persistence.
+* [`docs/OVERLAYS_SYSTEM.md`](docs/OVERLAYS_SYSTEM.md) — seven overlay kinds + math + idempotency contract.
+* [`docs/DATASET_DERIVED_HELPERS.md`](docs/DATASET_DERIVED_HELPERS.md) — bounding-sphere / source-distribution / placeholder helpers.
 
 Per-feature deep docs:
 [`UNAV_PRO_ARCHITECTURE`](docs/UNAV_PRO_ARCHITECTURE.md) ·
@@ -943,6 +999,22 @@ the per-milestone phasing is in
   Filter buttons. Visible-sector pipeline + v1.8 timeline
   baking are unchanged. No rendering, no IPC. **1421
   Python tests pass.**
+* **v2.0** ships procedural authoring tools. New
+  ``procedural/`` package: pure-Python overlay computation
+  (seven kinds — grid / galactic plane / ecliptic plane /
+  distance rings / sector cone / route corridor / waypoint
+  labels) plus dataset-derived helpers (bounding sphere,
+  source distribution, density-heatmap + redshift-shell
+  placeholders). New ``c4d_objects/overlays_builder.py``
+  materialises bundles under an idempotent ``UNAV_Overlays``
+  root null — re-builds replace in place; empty bundles drop
+  the subtree. ``ProjectState`` carries an `overlays` dict so
+  visibility + sizing persist across "Save / Load UNAV State".
+  Dialog gains an **Overlays** tab with seven checkboxes +
+  radius scrubber + Build / Clear transports. Visible-sector
+  pipeline + v1.8 timeline baking + v1.9 voyage tools are
+  all unchanged. No rendering, no IPC. **1485 Python tests
+  pass.**
 
 ### Current limitations
 

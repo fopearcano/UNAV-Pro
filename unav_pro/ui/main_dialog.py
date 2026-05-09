@@ -169,6 +169,20 @@ _ID_BTN_MISSION_EXPORT_CSV = 10475
 _ID_MISSION_SEARCH_INPUT = 10476
 _ID_BTN_MISSION_SEARCH = 10477
 
+# v2.0 procedural overlay controls.
+_ID_TAB_OVERLAYS = 10500
+_ID_OVL_SHOW_GRID = 10501
+_ID_OVL_SHOW_GALACTIC = 10502
+_ID_OVL_SHOW_ECLIPTIC = 10503
+_ID_OVL_SHOW_DISTANCE_RINGS = 10504
+_ID_OVL_SHOW_SECTOR_CONE = 10505
+_ID_OVL_SHOW_ROUTE_CORRIDOR = 10506
+_ID_OVL_SHOW_LABELS = 10507
+_ID_OVL_RADIUS_PC = 10508
+_ID_BTN_OVL_BUILD = 10509
+_ID_BTN_OVL_CLEAR = 10510
+_ID_OVL_STATUS = 10511
+
 
 if _C4D_AVAILABLE:
 
@@ -431,6 +445,7 @@ if _C4D_AVAILABLE:
                 self._build_bookmarks_tab()
                 self._build_navigation_tab()
                 self._build_missions_tab()
+                self._build_overlays_tab()
                 self.GroupEnd()
             except Exception:  # noqa: BLE001 — UI boundary
                 _log.exception("v0.6 tab group failed to build")
@@ -683,6 +698,44 @@ if _C4D_AVAILABLE:
                 name="(no mission loaded)",
             )
 
+            self.GroupEnd()
+
+        def _build_overlays_tab(self) -> None:
+            """v2.0 procedural-overlays panel.
+
+            Show / hide checkboxes per overlay kind, a single
+            radius scrubber, and Build / Clear buttons. The
+            settings persist via project_state."""
+            self.GroupBegin(
+                _ID_TAB_OVERLAYS, c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT,
+                cols=1, rows=4, title="Overlays",
+            )
+            self.GroupBorderSpace(8, 8, 8, 8)
+
+            # Visibility checkboxes (two columns).
+            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=2, rows=4)
+            self.AddCheckbox(_ID_OVL_SHOW_GRID, c4d.BFH_LEFT, 0, 0, name="Coordinate grid")
+            self.AddCheckbox(_ID_OVL_SHOW_GALACTIC, c4d.BFH_LEFT, 0, 0, name="Galactic plane")
+            self.AddCheckbox(_ID_OVL_SHOW_ECLIPTIC, c4d.BFH_LEFT, 0, 0, name="Ecliptic plane")
+            self.AddCheckbox(_ID_OVL_SHOW_DISTANCE_RINGS, c4d.BFH_LEFT, 0, 0, name="Distance rings")
+            self.AddCheckbox(_ID_OVL_SHOW_SECTOR_CONE, c4d.BFH_LEFT, 0, 0, name="Sector cone")
+            self.AddCheckbox(_ID_OVL_SHOW_ROUTE_CORRIDOR, c4d.BFH_LEFT, 0, 0, name="Route corridor")
+            self.AddCheckbox(_ID_OVL_SHOW_LABELS, c4d.BFH_LEFT, 0, 0, name="Waypoint labels")
+            self.GroupEnd()
+
+            # Radius + transport.
+            self.GroupBegin(0, c4d.BFH_SCALEFIT, cols=4, rows=1)
+            self.AddStaticText(0, c4d.BFH_LEFT, name="Radius (pc)")
+            self.AddEditNumberArrows(_ID_OVL_RADIUS_PC, c4d.BFH_SCALEFIT)
+            self.SetFloat(_ID_OVL_RADIUS_PC, 100.0, min=0.001, max=1.0e9, step=10.0)
+            self.AddButton(_ID_BTN_OVL_BUILD, c4d.BFH_SCALEFIT, name="Build / Refresh")
+            self.AddButton(_ID_BTN_OVL_CLEAR, c4d.BFH_SCALEFIT, name="Clear Overlays")
+            self.GroupEnd()
+
+            self.AddStaticText(
+                _ID_OVL_STATUS, c4d.BFH_SCALEFIT,
+                name="(overlays idle)",
+            )
             self.GroupEnd()
 
         def InitValues(self) -> bool:
@@ -959,6 +1012,17 @@ if _C4D_AVAILABLE:
                     self._do_mission_export_csv()
                 elif mid == _ID_BTN_MISSION_SEARCH:
                     self._do_mission_search()
+                elif mid == _ID_BTN_OVL_BUILD:
+                    self._do_overlays_build()
+                elif mid == _ID_BTN_OVL_CLEAR:
+                    self._do_overlays_clear()
+                elif mid in (
+                    _ID_OVL_SHOW_GRID, _ID_OVL_SHOW_GALACTIC,
+                    _ID_OVL_SHOW_ECLIPTIC, _ID_OVL_SHOW_DISTANCE_RINGS,
+                    _ID_OVL_SHOW_SECTOR_CONE, _ID_OVL_SHOW_ROUTE_CORRIDOR,
+                    _ID_OVL_SHOW_LABELS, _ID_OVL_RADIUS_PC,
+                ):
+                    self._do_overlays_settings_changed()
             except Exception as exc:  # noqa: BLE001 — UI boundary handler
                 _log.exception("Dialog command %s failed", mid)
                 self._append_log(f"ERROR: {exc!r}")
@@ -2178,6 +2242,146 @@ if _C4D_AVAILABLE:
                 lines.append(line)
             self.SetString(_ID_MISSIONS_LIST, "\n".join(lines))
             self._append_log(f"Mission search '{query}': {count} match(es).")
+
+        # --- v2.0 procedural-overlay helpers ---
+
+        # Cached OverlaySettings the UI checkboxes write into.
+        # Rebuilt on demand from project_state when the dialog
+        # loads UNAV state (so a saved scene's overlay
+        # visibility round-trips on reopen).
+        _overlay_settings = None
+
+        def _read_overlay_settings(self):
+            """Build an ``OverlaySettings`` from the current
+            checkbox state. The dialog uses this on Build and
+            on every settings-change event (so the cached
+            instance reflects the latest UI state)."""
+            from procedural import OverlaySettings
+            try:
+                radius = float(self.GetFloat(_ID_OVL_RADIUS_PC))
+            except Exception:  # noqa: BLE001
+                radius = 100.0
+            if radius <= 0:
+                radius = 100.0
+            try:
+                settings = OverlaySettings(
+                    show_grid=bool(self.GetBool(_ID_OVL_SHOW_GRID)),
+                    show_galactic_plane=bool(self.GetBool(_ID_OVL_SHOW_GALACTIC)),
+                    show_ecliptic_plane=bool(self.GetBool(_ID_OVL_SHOW_ECLIPTIC)),
+                    show_distance_rings=bool(self.GetBool(_ID_OVL_SHOW_DISTANCE_RINGS)),
+                    show_sector_cone=bool(self.GetBool(_ID_OVL_SHOW_SECTOR_CONE)),
+                    show_route_corridor=bool(self.GetBool(_ID_OVL_SHOW_ROUTE_CORRIDOR)),
+                    show_waypoint_labels=bool(self.GetBool(_ID_OVL_SHOW_LABELS)),
+                    radius_pc=radius,
+                )
+            except (TypeError, ValueError):
+                settings = OverlaySettings()
+            self._overlay_settings = settings
+            return settings
+
+        def _do_overlays_settings_changed(self) -> None:
+            """One of the overlay UI controls changed. Cache
+            the new settings; do NOT rebuild — the artist
+            clicks Build / Refresh explicitly."""
+            self._read_overlay_settings()
+            try:
+                self.SetString(
+                    _ID_OVL_STATUS,
+                    "Overlays: settings changed — click Build / Refresh "
+                    "to materialise.",
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+        def _do_overlays_build(self) -> None:
+            """Build / refresh the procedural overlays. Reuses
+            the existing ``UNAV_Overlays`` parent so re-clicks
+            don't duplicate scene objects (idempotency
+            guarantee from the c4d builder)."""
+            from c4d_objects.overlays_builder import (
+                apply_overlay_bundle,
+            )
+            from procedural import build_overlay_bundle
+
+            settings = self._read_overlay_settings()
+            if not settings.any_visible():
+                self._append_log(
+                    "Overlays: no overlay flag is on — nothing to build."
+                )
+                self.SetString(
+                    _ID_OVL_STATUS,
+                    "Overlays: nothing selected.",
+                )
+                return
+
+            # Optional sector-cone inputs from the live navigator.
+            sector_kwargs = {}
+            try:
+                from c4d_objects.navigation_null import (
+                    find_navigator,
+                )
+                nav = find_navigator(c4d.documents.GetActiveDocument())
+                if nav is not None and settings.show_sector_cone:
+                    pos = nav.GetAbsPos()
+                    sector_kwargs.update(
+                        sector_origin_pc=(
+                            float(pos.x), float(pos.y), float(pos.z),
+                        ),
+                        sector_forward=(1.0, 0.0, 0.0),
+                        sector_cone_half_angle_deg=30.0,
+                        sector_far_pc=settings.radius_pc,
+                    )
+            except Exception:  # noqa: BLE001
+                pass
+
+            # Optional route corridor inputs from the live route.
+            route_pts = None
+            label_pts = None
+            if (settings.show_route_corridor or settings.show_waypoint_labels) \
+                    and getattr(self, "_route", None) is not None:
+                route_pts = []
+                label_pts = []
+                for wp in self._route:
+                    if not wp.has_c4d_position():
+                        continue
+                    pos = (float(wp.x_c4d), float(wp.y_c4d), float(wp.z_c4d))
+                    route_pts.append(pos)
+                    label_pts.append((wp.display_label(), pos))
+
+            bundle = build_overlay_bundle(
+                settings,
+                route_waypoints=route_pts,
+                waypoint_labels=label_pts,
+                **sector_kwargs,
+            )
+            written = apply_overlay_bundle(bundle)
+            self._append_log(
+                f"Overlays: built {written} scene object(s) "
+                f"({len(bundle.polylines)} polyline(s), "
+                f"{len(bundle.labels)} label(s))."
+            )
+            try:
+                self.SetString(
+                    _ID_OVL_STATUS,
+                    f"Overlays: {written} scene object(s) live.",
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+        def _do_overlays_clear(self) -> None:
+            from c4d_objects.overlays_builder import clear_overlays
+            ok = clear_overlays()
+            self._append_log(
+                "Overlays: cleared." if ok
+                else "Overlays: nothing to clear."
+            )
+            try:
+                self.SetString(
+                    _ID_OVL_STATUS,
+                    "(overlays cleared)" if ok else "(overlays idle)",
+                )
+            except Exception:  # noqa: BLE001
+                pass
 
         # The dataset manager dialog is async and persistent: we
         # keep one instance per session so re-clicking the menu

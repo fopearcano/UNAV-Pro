@@ -82,6 +82,12 @@ class ProjectState:
     visual_encoding: Dict[str, Any] = field(default_factory=dict)
     config: Optional[Dict[str, Any]] = None
     notes: str = ""
+    # v2.0: per-project overlay visibility + sizing.
+    # Stored as a plain dict (the live ``OverlaySettings`` is
+    # built on demand by ``procedural.OverlaySettings.from_dict``)
+    # so the project_state layer keeps zero coupling to the
+    # procedural module's import surface.
+    overlays: Dict[str, Any] = field(default_factory=dict)
 
     # ---------------------------------------------------- (de)serialization
     def to_dict(self) -> Dict[str, Any]:
@@ -94,6 +100,7 @@ class ProjectState:
             "visual_encoding": dict(self.visual_encoding),
             "config": dict(self.config) if self.config else None,
             "notes": self.notes,
+            "overlays": dict(self.overlays) if self.overlays else {},
         }
 
     @classmethod
