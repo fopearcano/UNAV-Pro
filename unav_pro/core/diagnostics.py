@@ -449,6 +449,114 @@ def render_task_queue_line(queue: Any) -> str:
     )
 
 
+# ---------------------------------------------------------------------------
+# v3.45 document summary
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class DocumentSummary:
+    """Snapshot of UNAV's footprint inside one Cinema 4D
+    document. The diagnostics panel renders this so the
+    artist can confirm "yes, this scene contains UNAV
+    work."
+
+    Pure data; built by ``build_document_summary`` from
+    a v3.45 ``UNAVObjectCounts`` snapshot + the active
+    mission / workspace."""
+
+    document_title: str = ""
+    project_root_present: bool = False
+    total_unav_objects: int = 0
+    by_category: Dict[str, int] = field(default_factory=dict)
+    active_mission_title: str = ""
+    active_mission_waypoint_count: int = 0
+    workspace_root: str = ""
+
+    def short_summary(self) -> str:
+        if not self.project_root_present:
+            return f"{self.document_title or '(unknown doc)'}: no UNAV root"
+        bits = [
+            f"{self.total_unav_objects} UNAV object(s)",
+        ]
+        if self.active_mission_title:
+            bits.append(
+                f"mission '{self.active_mission_title}' "
+                f"({self.active_mission_waypoint_count} wp)"
+            )
+        if self.workspace_root:
+            bits.append(f"workspace={self.workspace_root}")
+        return f"{self.document_title or '(unknown doc)'}: " + ", ".join(bits)
+
+    def render(self) -> str:
+        lines: List[str] = []
+        lines.append(f"Document: {self.document_title or '(unknown)'}")
+        lines.append(
+            "  UNAV_Project root: "
+            + ("present" if self.project_root_present else "missing")
+        )
+        if self.by_category:
+            for cat in sorted(self.by_category):
+                count = self.by_category[cat]
+                if count:
+                    lines.append(f"  {cat}: {count} object(s)")
+        if self.active_mission_title:
+            lines.append(
+                f"  active mission: '{self.active_mission_title}' "
+                f"({self.active_mission_waypoint_count} waypoint(s))"
+            )
+        if self.workspace_root:
+            lines.append(f"  workspace: {self.workspace_root}")
+        return "\n".join(lines)
+
+
+def build_document_summary(
+    *,
+    document_title: str = "",
+    object_counts: Any = None,
+    active_mission: Any = None,
+    workspace: Any = None,
+) -> DocumentSummary:
+    """Compose a ``DocumentSummary``.
+
+    * ``object_counts`` is a v3.45 ``UNAVObjectCounts``
+      record (or ``None``).
+    * ``active_mission`` is the v1.4 ``Mission`` object
+      (or ``None``).
+    * ``workspace`` is the v3.1 ``Workspace`` (or
+      ``None``).
+    """
+    summary = DocumentSummary(document_title=str(document_title or ""))
+    if object_counts is not None:
+        summary.project_root_present = bool(
+            getattr(object_counts, "project_root_present", False)
+        )
+        summary.total_unav_objects = int(
+            getattr(object_counts, "total_unav_owned", 0) or 0
+        )
+        summary.by_category = dict(
+            getattr(object_counts, "by_category", {}) or {}
+        )
+    if active_mission is not None:
+        try:
+            summary.active_mission_title = str(
+                getattr(active_mission, "title", "") or ""
+            )
+            summary.active_mission_waypoint_count = len(
+                getattr(active_mission, "waypoints", ()) or ()
+            )
+        except Exception:  # noqa: BLE001
+            pass
+    if workspace is not None:
+        try:
+            summary.workspace_root = str(
+                getattr(workspace, "root", "") or ""
+            )
+        except Exception:  # noqa: BLE001
+            pass
+    return summary
+
+
 def build_diagnostics_report(
     *,
     dataset_estimates: Optional[Sequence[Tuple[str, DatasetMemoryEstimate]]] = None,

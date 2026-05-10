@@ -189,6 +189,79 @@ the dataset registry's `<entry.name>:` namespace layers on top.
 Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
 
+### AA. Cinema 4D Native Integration Polish (v3.45)
+
+v3.45 is the **native-integration polish** milestone.
+Goal: make UNAV feel like a real Cinema 4D plug-in
+rather than an external tool that happens to live
+inside one. **Not** rendering. **Not** new authoring
+surfaces. v3.4 runtime preserved byte-identical;
+v3.45 adds the consistency layer that ties every
+C4D-bound operation together.
+
+What's new:
+
+* **Declarative undo policy**
+  (`unav_pro/c4d_objects/undo_policy.py`).
+  `UNDO_POLICY` documents every UNAV scene-mutating
+  operation (15 entries). New `UndoSession` context
+  manager wraps `StartUndo` / `AddUndo` /
+  `EndUndo` / `EventAdd` and validates each
+  `add(...)` against the policy. Tests can drive
+  the session with `doc=None` to assert what an
+  operation *would* record without booting Cinema
+  4D.
+* **Central deterministic naming**
+  (`unav_pro/c4d_objects/naming.py`). Same input →
+  same scene-object / timeline-marker / baked-
+  track name every time. `UNAV_` prefix for scene
+  objects, `UNAV:` prefix for timeline tokens,
+  `UNAV:Bake:*` namespace for baked tracks.
+* **Lifecycle planner**
+  (`unav_pro/c4d_objects/lifecycle.py`). Five
+  document events (open / close / switch / reload /
+  save) modeled as pure planners; the c4d-bound
+  dispatcher reads the `LifecycleActionPlan`.
+  `MultiDocumentReport` tracks which scenes have
+  UNAV state.
+* **Object Manager view**
+  (`unav_pro/c4d_objects/object_manager_view.py`).
+  Pure summariser: per-category counts,
+  depth-first flattened listing, duplicate-root +
+  orphan detection.
+* **Viewport visibility planner**
+  (`unav_pro/c4d_objects/viewport_visibility.py`).
+  Four workflow profiles (Author / Lecture / Bake
+  / Hidden) + label-clutter policy that picks the
+  visible label set per camera distance.
+* **Document summary**
+  (`core/diagnostics.py::build_document_summary`).
+  Per-document snapshot the diagnostics panel
+  renders.
+* **Release artefacts** —
+  `RELEASE_NOTES_v3.45.md`, CHANGELOG entry; the
+  dialog status line shows the new version +
+  codename on every open. Packaging script ships
+  five new docs + v3.45 release notes.
+* **Tests** — `test_v345_undo_policy`,
+  `test_v345_naming`, `test_v345_lifecycle`,
+  `test_v345_object_manager_view`,
+  `test_v345_viewport_visibility`,
+  `test_v345_document_summary`. **144 new tests;
+  2488 Python tests pass.**
+
+Walkthroughs:
+[`docs/V3_45_C4D_INTEGRATION_AUDIT.md`](docs/V3_45_C4D_INTEGRATION_AUDIT.md)
+— exhaustive integration audit;
+[`docs/V3_45_NATIVE_C4D_WORKFLOW.md`](docs/V3_45_NATIVE_C4D_WORKFLOW.md)
+— workflow overview;
+[`docs/UNDO_REDO_SUPPORT.md`](docs/UNDO_REDO_SUPPORT.md)
+— undo policy + `UndoSession`;
+[`docs/OBJECT_MANAGER_STRUCTURE.md`](docs/OBJECT_MANAGER_STRUCTURE.md)
+— OM diagnostics + cleanup;
+[`docs/MULTI_DOCUMENT_BEHAVIOR.md`](docs/MULTI_DOCUMENT_BEHAVIOR.md)
+— multi-doc + lifecycle reference.
+
 ### Z. Internal Beta Hardening (v3.4)
 
 v3.4 is the **internal-beta hardening** milestone. Goal:

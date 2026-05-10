@@ -58,6 +58,7 @@ PACKAGE_INCLUDE: tuple = (
     "RELEASE_NOTES_v3.2.md",
     "RELEASE_NOTES_v3.3.md",
     "RELEASE_NOTES_v3.4_INTERNAL_BETA.md",
+    "RELEASE_NOTES_v3.45.md",
     "samples/minimal_unav_demo",
     "samples/internal_beta_demo",
 )
@@ -94,6 +95,11 @@ PACKAGE_DOCS: tuple = (
     "docs/EDUCATIONAL_WORKFLOWS.md",
     "docs/PRESENTER_NOTES.md",
     "docs/V3_4_INTERNAL_BETA_CHECKLIST.md",
+    "docs/V3_45_C4D_INTEGRATION_AUDIT.md",
+    "docs/V3_45_NATIVE_C4D_WORKFLOW.md",
+    "docs/UNDO_REDO_SUPPORT.md",
+    "docs/OBJECT_MANAGER_STRUCTURE.md",
+    "docs/MULTI_DOCUMENT_BEHAVIOR.md",
 )
 
 #: Path-name parts that exclude any directory or file
@@ -154,6 +160,7 @@ REQUIRED_FILES: tuple = (
     "RELEASE_NOTES_v3.2.md",
     "RELEASE_NOTES_v3.3.md",
     "RELEASE_NOTES_v3.4_INTERNAL_BETA.md",
+    "RELEASE_NOTES_v3.45.md",
     "docs/INSTALL_C4D_2023_PLUS.md",
     "docs/QUICK_START.md",
     "docs/USER_MANUAL.md",
@@ -169,6 +176,10 @@ REQUIRED_FILES: tuple = (
     "docs/V3_3_PRESENTATION_MODE.md",
     "docs/EDUCATIONAL_WORKFLOWS.md",
     "docs/V3_4_INTERNAL_BETA_CHECKLIST.md",
+    "docs/V3_45_NATIVE_C4D_WORKFLOW.md",
+    "docs/UNDO_REDO_SUPPORT.md",
+    "docs/OBJECT_MANAGER_STRUCTURE.md",
+    "docs/MULTI_DOCUMENT_BEHAVIOR.md",
     "samples/minimal_unav_demo/README.md",
     "samples/internal_beta_demo/README.md",
     "samples/internal_beta_demo/project_manifest.json",

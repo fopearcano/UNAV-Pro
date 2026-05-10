@@ -4,6 +4,76 @@ All notable changes to UNAV Pro are tracked here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [3.4.5] — Cinema 4D Native Integration Polish
+
+Native-integration polish milestone. Goal: make UNAV
+feel like a real Cinema 4D plug-in rather than an
+external tool that happens to live inside one.
+**Not** rendering. **Not** new authoring surfaces.
+v3.4 runtime preserved byte-identical; v3.45 adds the
+consistency layer that ties every C4D-bound
+operation together.
+
+### Added
+
+* `unav_pro/c4d_objects/undo_policy.py` —
+  declarative `UNDO_POLICY` table covering 15
+  operations + `UndoSession` context manager.
+  Validates each `add(...)` against the policy.
+* `unav_pro/c4d_objects/naming.py` — central
+  deterministic naming for visible-sector
+  children, overlays, science layers, mission
+  previews, waypoint nulls, annotations, marker
+  tokens, baked tracks. `UNAV_` scene prefix +
+  `UNAV:` timeline prefix.
+* `unav_pro/c4d_objects/lifecycle.py` — pure
+  scene-lifecycle planner covering five events
+  (open / close / switch / reload / save) +
+  `MultiDocumentReport`.
+* `unav_pro/c4d_objects/object_manager_view.py` —
+  pure scene-hierarchy summariser.
+  `count_unav_objects`, `flatten_unav_tree`,
+  `find_duplicate_roots`, `find_orphans`,
+  `render_object_manager_view`.
+* `unav_pro/c4d_objects/viewport_visibility.py` —
+  four workflow profiles (Author / Lecture /
+  Bake / Hidden) + label-clutter policy.
+* `core/diagnostics.py::build_document_summary`
+  + `DocumentSummary` for the per-document panel
+  view.
+* New docs:
+  `docs/V3_45_C4D_INTEGRATION_AUDIT.md`,
+  `docs/V3_45_NATIVE_C4D_WORKFLOW.md`,
+  `docs/UNDO_REDO_SUPPORT.md`,
+  `docs/OBJECT_MANAGER_STRUCTURE.md`,
+  `docs/MULTI_DOCUMENT_BEHAVIOR.md`.
+* `RELEASE_NOTES_v3.45.md`.
+* New tests: `test_v345_undo_policy`,
+  `test_v345_naming`, `test_v345_lifecycle`,
+  `test_v345_object_manager_view`,
+  `test_v345_viewport_visibility`,
+  `test_v345_document_summary`. **144 new tests.**
+
+### Changed
+
+* `scripts/package_plugin.py` ships the v3.45
+  release notes + the five new docs.
+* `unav_pro/version.py::PLUGIN_VERSION` 3.4.0 →
+  3.4.5; codename *Cinema 4D Native Integration
+  Polish*.
+
+### Unchanged
+
+* Every v0.1 → v3.4 feature surface is preserved.
+* Mission JSON, Route JSON, Camera Path JSON,
+  Export Manifest, DB schema, binary format,
+  provenance JSON, presentation JSON are byte-
+  identical to v3.4.
+* Runtime stays stdlib-only. No threading; no IPC;
+  no rendering.
+
+---
+
 ## [3.4.0] — Internal Beta Hardening
 
 Internal-beta hardening milestone. Goal: prepare UNAV
