@@ -4,6 +4,71 @@ All notable changes to UNAV Pro are tracked here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [3.7.0] — Advanced Astronomical Queries
+
+Discovery / search milestone. Goal: turn UNAV into
+a strong astronomical search and exploration tool
+inside Cinema 4D. **Not** rendering. **Not** new
+authoring surfaces. **Not** new data fetchers. v3.6
+runtime preserved byte-for-byte.
+
+### Added
+
+* `unav_pro/query/` (new package):
+  * `advanced_query.py` — `AdvancedQuery` +
+    `run_query` + `QueryReport`. Eleven query
+    kinds; deterministic ranking with stable uid
+    tie-break.
+  * `query_presets.py` — eight named factory
+    presets + `PRESET_REGISTRY` for the dialog.
+  * `route_query.py` — polyline-corridor +
+    per-waypoint nearest-neighbour helpers +
+    route summary.
+  * `result_actions.py` — pure helpers
+    translating a `QueryResult` into bookmark /
+    route / mission / focus / inspector deltas
+    + bulk variants.
+  * `export.py` — JSON / CSV / Markdown
+    exporters + atomic file-write helpers.
+* `unav_pro/ui/advanced_query_panel.py` — pure
+  panel-action facade (`query_from_form`,
+  `run_query_action`, `select_preset_action`,
+  `export_results_*_action`,
+  `run_route_query_action`).
+* New docs:
+  `docs/V3_7_ADVANCED_ASTRONOMICAL_QUERIES.md`,
+  `docs/QUERY_PRESETS.md`,
+  `docs/ROUTE_AWARE_QUERIES.md`,
+  `docs/EPOCH_AWARE_QUERY_LIMITATIONS.md`.
+* `RELEASE_NOTES_v3.7.md`.
+* New tests: `test_v37_advanced_query`,
+  `test_v37_query_presets`,
+  `test_v37_route_query`,
+  `test_v37_result_actions`,
+  `test_v37_query_export`,
+  `test_v37_advanced_query_panel`.
+  **145 new tests.**
+
+### Changed
+
+* `scripts/package_plugin.py` ships the four new
+  docs + the v3.7 release notes.
+* `unav_pro/version.py::PLUGIN_VERSION` 3.6.0 →
+  3.7.0; codename *Advanced Astronomical
+  Queries*.
+
+### Unchanged
+
+* Every v0.1 → v3.6 feature surface is preserved.
+* Mission JSON, Route JSON, Camera Path JSON,
+  Export Manifest, DB schema, binary format,
+  provenance JSON, presentation JSON byte-
+  identical to v3.6.
+* Runtime stays stdlib-only. No threading; no IPC;
+  no rendering; no PRNG state.
+
+---
+
 ## [3.6.0] — Procedural Cinematic Helpers
 
 Cinematic-helpers milestone. Goal: make UNAV more

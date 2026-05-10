@@ -212,6 +212,75 @@ the dataset registry's `<entry.name>:` namespace layers on top.
 Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
 
+### DD. Advanced Astronomical Queries (v3.7)
+
+v3.7 turns UNAV into a **strong astronomical
+search and discovery tool inside Cinema 4D**.
+**Not** rendering. **Not** new authoring surfaces.
+**Not** new HTTP fetchers. v3.6 runtime preserved
+byte-for-byte.
+
+What's new:
+
+* **Pure-Python query engine**
+  (`unav_pro/query/advanced_query.py`). Eleven
+  structured query kinds (`nearest`, `brightest`,
+  `highest_redshift`, `distance_range`,
+  `magnitude_range`, `redshift_range`,
+  `by_source`, `by_type`,
+  `within_visible_sector`, `near_selected`,
+  `near_route`). Deterministic ranking with
+  stable uid tie-break.
+* **Eight named presets**
+  (`unav_pro/query/query_presets.py`). Nearest
+  stars, brightest stars, nearby Gaia, high-z
+  galaxies / quasars, solar system at epoch,
+  around navigator, along route, selected-
+  dataset summary.
+* **Route-aware discovery**
+  (`unav_pro/query/route_query.py`). Polyline-
+  corridor matching, per-waypoint nearest-
+  neighbour, route distribution summary.
+* **Result actions**
+  (`unav_pro/query/result_actions.py`). Pure
+  helpers translating a `QueryResult` into
+  bookmark / route / mission / navigator-focus /
+  inspector deltas. Bulk variants too.
+* **JSON / CSV / Markdown exporters**
+  (`unav_pro/query/export.py`). Atomic file
+  writes; deterministic output (modulo
+  timestamp).
+* **Advanced Query panel facade**
+  (`unav_pro/ui/advanced_query_panel.py`). Pure
+  Python wrappers for run-query / preset-pick /
+  export / route-query.
+* **Epoch-aware safety.** Setting `epoch_jd`
+  produces explicit warnings + notes documenting
+  what the v3.7 engine does (and doesn't) do.
+  See `docs/EPOCH_AWARE_QUERY_LIMITATIONS.md`.
+* **Release artefacts** —
+  `RELEASE_NOTES_v3.7.md`, CHANGELOG entry; the
+  dialog status line shows the new version +
+  codename on every open. Packaging script ships
+  four new docs + v3.7 release notes.
+* **Tests** — `test_v37_advanced_query`,
+  `test_v37_query_presets`,
+  `test_v37_route_query`,
+  `test_v37_result_actions`,
+  `test_v37_query_export`,
+  `test_v37_advanced_query_panel`.
+  **145 new tests; 2870 Python tests pass.**
+
+Walkthroughs:
+[`docs/V3_7_ADVANCED_ASTRONOMICAL_QUERIES.md`](docs/V3_7_ADVANCED_ASTRONOMICAL_QUERIES.md)
+— milestone overview;
+[`docs/QUERY_PRESETS.md`](docs/QUERY_PRESETS.md)
+— preset registry;
+[`docs/ROUTE_AWARE_QUERIES.md`](docs/ROUTE_AWARE_QUERIES.md)
+— route-corridor + per-waypoint helpers;
+[`docs/EPOCH_AWARE_QUERY_LIMITATIONS.md`](docs/EPOCH_AWARE_QUERY_LIMITATIONS.md)
+— what `epoch_jd` does (and doesn't).
+
 ### CC. Procedural Cinematic Helpers (v3.6)
 
 v3.6 adds **camera choreography, shot planning, and

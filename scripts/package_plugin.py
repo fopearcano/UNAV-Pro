@@ -63,6 +63,7 @@ PACKAGE_INCLUDE: tuple = (
     "RELEASE_NOTES_v3.45.md",
     "RELEASE_NOTES_v3.5_PUBLIC_ALPHA.md",
     "RELEASE_NOTES_v3.6.md",
+    "RELEASE_NOTES_v3.7.md",
     "samples/minimal_unav_demo",
     "samples/internal_beta_demo",
 )
@@ -112,6 +113,10 @@ PACKAGE_DOCS: tuple = (
     "docs/CAMERA_RIGS.md",
     "docs/CINEMATIC_FRAMING.md",
     "docs/ROUTE_BEAUTIFICATION.md",
+    "docs/V3_7_ADVANCED_ASTRONOMICAL_QUERIES.md",
+    "docs/QUERY_PRESETS.md",
+    "docs/ROUTE_AWARE_QUERIES.md",
+    "docs/EPOCH_AWARE_QUERY_LIMITATIONS.md",
 )
 
 #: Path-name parts that exclude any directory or file
@@ -179,6 +184,7 @@ REQUIRED_FILES: tuple = (
     "RELEASE_NOTES_v3.45.md",
     "RELEASE_NOTES_v3.5_PUBLIC_ALPHA.md",
     "RELEASE_NOTES_v3.6.md",
+    "RELEASE_NOTES_v3.7.md",
     "docs/INSTALL_C4D_2023_PLUS.md",
     "docs/QUICK_START.md",
     "docs/PUBLIC_ALPHA_TESTING_GUIDE.md",
@@ -187,6 +193,8 @@ REQUIRED_FILES: tuple = (
     "docs/DATA_SOURCE_ATTRIBUTION.md",
     "docs/V3_6_PROCEDURAL_CINEMATIC_HELPERS.md",
     "docs/CAMERA_RIGS.md",
+    "docs/V3_7_ADVANCED_ASTRONOMICAL_QUERIES.md",
+    "docs/EPOCH_AWARE_QUERY_LIMITATIONS.md",
     "docs/USER_MANUAL.md",
     "docs/ARTIST_QUICKSTART.md",
     "docs/TD_GUIDE.md",
