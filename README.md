@@ -1,11 +1,34 @@
 # UNAV Pro — Cinema 4D Universal Navigator
 
+> **🚀 Public Alpha — v3.5.0**
+> UNAV Pro is now a public-alpha Cinema 4D 2023+
+> plug-in for astronomical navigation, voyage / camera
+> animation, and guided presentations.
+> If you're new here, jump to
+> [Install](#install), [Quick start](#quick-start-5-minutes),
+> and [Reporting issues](#reporting-issues) below.
+
 Real-data-driven interstellar navigation inside Cinema 4D 2023+.
 Fetch real astrophysical catalogs (Gaia, SDSS, DESI, NASA/JPL Horizons),
 filter them through a navigator-defined view cone, and materialize
 only the visible objects in the C4D scene as a fully editable point
-cloud — with metadata inspection, route planning, and per-source
-visual encoding.
+cloud — with metadata inspection, route planning, mission /
+voyage authoring, animation timeline integration, project
+workspaces, data provenance, guided presentations, and a
+v3.4 internal-beta sample workspace. Stdlib-only at runtime;
+no rendering engine, no IPC, no network calls inside the host.
+
+| | |
+| --- | --- |
+| **License** | Apache 2.0 — see [`LICENSE`](LICENSE) and [`NOTICE.md`](NOTICE.md) |
+| **Cinema 4D** | 2023, 2024, 2025 (API ≥ 26000) |
+| **Python (host)** | 3.11.x (whatever Cinema 4D 2024+ ships) |
+| **Runtime deps** | stdlib only — no `numpy`, `astropy`, `astroquery` |
+| **Tested OS** | macOS 14 / 15, Windows 11; Linux for CLI tools |
+| **Status** | public alpha — see [`docs/PUBLIC_ALPHA_TESTING_GUIDE.md`](docs/PUBLIC_ALPHA_TESTING_GUIDE.md) |
+| **First-run guide** | [`docs/FIRST_RUN_GUIDE.md`](docs/FIRST_RUN_GUIDE.md) |
+| **Issue reporting** | [`docs/ISSUE_REPORTING.md`](docs/ISSUE_REPORTING.md) |
+| **Data attribution** | [`docs/DATA_SOURCE_ATTRIBUTION.md`](docs/DATA_SOURCE_ATTRIBUTION.md) |
 
 ---
 
@@ -188,6 +211,68 @@ distinct in the visual encoder and the metadata inspector, and
 the dataset registry's `<entry.name>:` namespace layers on top.
 Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
+
+### BB. Public Alpha (v3.5)
+
+v3.5 is the **public alpha** release. **Not** a
+feature phase. **Not** rendering. **Not** new
+authoring surfaces. v3.45 runtime preserved byte-
+for-byte; v3.5 is packaging + communication +
+first-user readiness.
+
+What's new:
+
+* **LICENSE + NOTICE** at the repository root —
+  Apache 2.0 with attribution + bundled-data
+  disclosure.
+* **`docs/DATA_SOURCE_ATTRIBUTION.md`** — per-
+  source citation + license notes for Gaia DR3,
+  SDSS DR18, DESI EDR, and JPL Horizons. UNAV
+  redistributes **no real catalog data**; the
+  bundled samples are tiny synthetic fixtures.
+* **Issue report bundle**
+  (`unav_pro/core/issue_report.py`). Surfaced as
+  *Diagnostics → Create Issue Report*; produces a
+  Markdown document with plug-in / Cinema 4D /
+  Python / OS info, workspace + dataset status,
+  the latest health check, and the last 50 status-
+  log lines (≤ 32 KB). Safe content; no scene file,
+  no catalog rows.
+* **First-run experience**
+  (`unav_pro/core/first_run.py`). Welcome banner +
+  five-stage next-step engine (`no_workspace` →
+  `no_datasets` → `no_navigator` →
+  `no_visible_sector` → `ready`). Drives the
+  dialog's *Welcome* panel + the v3.5 empty-state
+  hints across every panel.
+* **Three new docs:**
+  [`docs/PUBLIC_ALPHA_TESTING_GUIDE.md`](docs/PUBLIC_ALPHA_TESTING_GUIDE.md),
+  [`docs/ISSUE_REPORTING.md`](docs/ISSUE_REPORTING.md),
+  [`docs/FIRST_RUN_GUIDE.md`](docs/FIRST_RUN_GUIDE.md).
+* **README — public-facing intro + matrix.** New
+  banner, requirements / status table, *Reporting
+  issues* + *License + attribution* sections
+  inserted before the milestone history.
+* **Release artefacts** —
+  `RELEASE_NOTES_v3.5_PUBLIC_ALPHA.md`, CHANGELOG
+  entry; the dialog status line shows the new
+  version + codename on every open. Packaging
+  script ships LICENSE + NOTICE + the new docs.
+* **Tests** — `test_v35_issue_report`,
+  `test_v35_first_run`,
+  `test_v35_package_manifest`,
+  `test_v35_release_artifacts`.
+  **102 new tests; 2590 Python tests pass.**
+
+Walkthroughs:
+[`RELEASE_NOTES_v3.5_PUBLIC_ALPHA.md`](RELEASE_NOTES_v3.5_PUBLIC_ALPHA.md)
+— public-alpha release notes;
+[`docs/PUBLIC_ALPHA_TESTING_GUIDE.md`](docs/PUBLIC_ALPHA_TESTING_GUIDE.md)
+— what to test;
+[`docs/FIRST_RUN_GUIDE.md`](docs/FIRST_RUN_GUIDE.md)
+— first ten minutes;
+[`docs/ISSUE_REPORTING.md`](docs/ISSUE_REPORTING.md)
+— how to file a bug.
 
 ### AA. Cinema 4D Native Integration Polish (v3.45)
 
@@ -1336,6 +1421,74 @@ bookmarks format in
 [`docs/BOOKMARKS_SYSTEM.md`](docs/BOOKMARKS_SYSTEM.md);
 route refinements in
 [`docs/ROUTE_WORKFLOW_V2.md`](docs/ROUTE_WORKFLOW_V2.md).
+
+---
+
+## Reporting issues
+
+UNAV Pro v3.5 is a **public alpha**; expect rough edges
+and please file what you find.
+
+1. **Triage first.** Run `Diagnostics → Run Health
+   Check`. Check
+   [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md)
+   and
+   [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md).
+   The v3.4 reset tools recover most confused-state
+   cases.
+2. **Build the issue-report bundle.** Click
+   `Diagnostics → Create Issue Report`. The plug-in
+   writes a Markdown file under
+   `~/.unav_pro/issue_reports/` containing the
+   plug-in version, Cinema 4D / Python / OS info,
+   workspace status, dataset status, the latest
+   health check, and the last 50 status-log lines.
+   The bundle never includes catalog rows, mission
+   JSONs, or scene files.
+3. **File on GitHub.** Attach the bundle.
+
+The full reporting workflow lives in
+[`docs/ISSUE_REPORTING.md`](docs/ISSUE_REPORTING.md).
+The "what to test" guide is
+[`docs/PUBLIC_ALPHA_TESTING_GUIDE.md`](docs/PUBLIC_ALPHA_TESTING_GUIDE.md).
+
+What we want most:
+
+* Crashes / hangs.
+* Workflow friction (buttons in wrong place,
+  confusing status messages).
+* Data-integrity surprises.
+* Documentation gaps.
+
+What we **don't** want:
+
+* Render-feature requests (UNAV will not become a
+  renderer).
+* RelativityRender bridge requests (out of scope).
+* Network / IPC requests (out of scope).
+* New major features at this stage.
+
+---
+
+## License + attribution
+
+UNAV Pro is licensed under the **Apache License,
+Version 2.0**; see [`LICENSE`](LICENSE) and
+[`NOTICE.md`](NOTICE.md). Per-source citation +
+license notes for Gaia DR3, SDSS DR18, DESI EDR,
+and JPL Horizons live in
+[`docs/DATA_SOURCE_ATTRIBUTION.md`](docs/DATA_SOURCE_ATTRIBUTION.md).
+
+UNAV Pro **does not redistribute** real catalog
+data. The bundled samples are tiny synthetic
+fixtures (~5 rows each) used for testing the
+workflow. See [`NOTICE.md`](NOTICE.md) §4.
+
+When you publish work made with UNAV that draws on
+any of the public catalogs, **you** are responsible
+for including each source's required citation. The
+v2.3 export package's manifest carries a v3.2
+`provenance_summary` to help.
 
 ---
 

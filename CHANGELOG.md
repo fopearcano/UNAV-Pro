@@ -4,6 +4,70 @@ All notable changes to UNAV Pro are tracked here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [3.5.0] — Public Alpha
+
+Public-alpha release. **Not** a feature phase. **Not**
+rendering. **Not** new authoring surfaces. v3.45 runtime
+preserved byte-for-byte; v3.5 is packaging +
+communication + first-user readiness.
+
+### Added
+
+* `LICENSE` (Apache License, Version 2.0) at the
+  repository root.
+* `NOTICE.md` with Apache 2.0 attribution + bundled-
+  data disclosure (synthetic samples; no real catalog
+  data redistributed).
+* `docs/DATA_SOURCE_ATTRIBUTION.md` — per-source
+  citation + license notes for Gaia DR3, SDSS DR18,
+  DESI EDR, and JPL Horizons.
+* `unav_pro/core/issue_report.py` — produces a
+  Markdown issue-report bundle (plug-in version,
+  Cinema 4D / Python / OS info, workspace status,
+  dataset status, latest health check, last 50
+  status-log lines). Surfaced in the dialog as
+  *Diagnostics → Create Issue Report*.
+* `unav_pro/core/first_run.py` — welcome banner +
+  five-stage next-step recommendation engine
+  (`no_workspace` → `no_datasets` → `no_navigator`
+  → `no_visible_sector` → `ready`).
+* New docs:
+  `docs/PUBLIC_ALPHA_TESTING_GUIDE.md`,
+  `docs/ISSUE_REPORTING.md`,
+  `docs/FIRST_RUN_GUIDE.md`.
+* `RELEASE_NOTES_v3.5_PUBLIC_ALPHA.md`.
+* New tests: `test_v35_issue_report`,
+  `test_v35_first_run`,
+  `test_v35_package_manifest`,
+  `test_v35_release_artifacts`.
+  **102 new tests.**
+
+### Changed
+
+* `README.md` — public-facing banner + matrix
+  table (license / Cinema 4D / Python / runtime
+  deps / tested OS / status / first-run / issue-
+  reporting / data-attribution).
+  *Reporting issues* + *License + attribution*
+  sections inserted before the milestone history.
+* `scripts/package_plugin.py` ships LICENSE +
+  NOTICE.md + the four new docs + the v3.5
+  release notes; `REQUIRED_FILES` updated.
+* `unav_pro/version.py::PLUGIN_VERSION` 3.4.5 →
+  3.5.0; codename *Public Alpha*.
+
+### Unchanged
+
+* Every v0.1 → v3.45 feature surface is preserved.
+* Mission JSON, Route JSON, Camera Path JSON,
+  Export Manifest, DB schema, binary format,
+  provenance JSON, presentation JSON are byte-
+  identical to v3.45.
+* Runtime stays stdlib-only. No threading; no IPC;
+  no rendering.
+
+---
+
 ## [3.4.5] — Cinema 4D Native Integration Polish
 
 Native-integration polish milestone. Goal: make UNAV
