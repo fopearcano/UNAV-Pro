@@ -212,6 +212,82 @@ the dataset registry's `<entry.name>:` namespace layers on top.
 Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
 
+### EE. Exhibition & Guided Tour Workflows (v3.8)
+
+v3.8 polishes the v3.3 presentation system for
+**museum / dome / exhibition / lecture use**
+inside Cinema 4D. **Not** rendering. **Not** new
+authoring surfaces. **Not** a real kiosk app.
+v3.7 runtime preserved byte-for-byte.
+
+What's new:
+
+* **Guided tour chapters**
+  (`unav_pro/presentation/chapters.py`).
+  `Chapter` + `ChapteredPresentation` + a
+  factory that builds chapters from
+  `(title, [step_id, ...])` groups.
+  Chapters reference v3.3 step ids by name; per-
+  chapter overlay / science / annotation flags;
+  estimated duration; tags; sequence-coverage
+  check.
+* **Exhibition mode**
+  (`unav_pro/presentation/exhibition_mode.py`).
+  Locked navigation, audience/presenter view
+  toggle, presenter-notes toggle, current-
+  chapter cursor, highlighted-uid + a
+  destructive-action **guard**: every operation
+  in `PROTECTED_OPERATIONS` (Reset Workspace,
+  Clear Generated Objects, Delete Mission,
+  Clear Route, …) is refused while a tour is
+  active.
+* **Presentation transitions**
+  (`unav_pro/presentation/transitions.py`).
+  Pure deterministic sequencer. Four kinds:
+  `hard_cut`, `smooth_camera`,
+  `crossfade_placeholder` (metadata only — no
+  rendering fade), `waypoint_pause`.
+* **Audience-friendly overlays**
+  (`unav_pro/presentation/audience_overlays.py`).
+  `AudienceOverlayFlags` resolver + curated
+  strip-list for distracting overlay / science
+  flags + `HighlightInstruction` for emphasis
+  halos.
+* **Exhibition export**
+  (`unav_pro/presentation/exhibition_export.py`).
+  Three-file package (chaptered JSON + chapter
+  summary Markdown + cue sheet Markdown).
+  Atomic writes; optional presenter-notes strip
+  mode.
+* **Exhibition panel facade**
+  (`unav_pro/ui/exhibition_panel.py`). Pure
+  Python wrappers for eight panel actions +
+  chapter cursor + guard helper + three
+  exporters.
+* **Release artefacts** —
+  `RELEASE_NOTES_v3.8.md`, CHANGELOG entry; the
+  dialog status line shows the new version +
+  codename on every open. Packaging script
+  ships four new docs + v3.8 release notes.
+* **Tests** — `test_v38_chapters`,
+  `test_v38_exhibition_mode`,
+  `test_v38_transitions`,
+  `test_v38_audience_overlays`,
+  `test_v38_exhibition_export`,
+  `test_v38_exhibition_panel`.
+  **169 new tests; 3039 Python tests pass.**
+
+Walkthroughs:
+[`docs/V3_8_EXHIBITION_WORKFLOWS.md`](docs/V3_8_EXHIBITION_WORKFLOWS.md)
+— milestone overview;
+[`docs/GUIDED_TOUR_CHAPTERS.md`](docs/GUIDED_TOUR_CHAPTERS.md)
+— chapter shape + sequence coverage;
+[`docs/AUDIENCE_MODE.md`](docs/AUDIENCE_MODE.md)
+— audience-vs-presenter view toggle + guard
+list;
+[`docs/PRESENTATION_TRANSITIONS.md`](docs/PRESENTATION_TRANSITIONS.md)
+— deterministic transition sequencer.
+
 ### DD. Advanced Astronomical Queries (v3.7)
 
 v3.7 turns UNAV into a **strong astronomical

@@ -66,6 +66,51 @@ from .export import (
     render_presenter_notes,
     write_presentation_files,
 )
+from .chapters import (
+    CHAPTER_SCHEMA_VERSION,
+    MAX_CHAPTERS_PER_PRESENTATION,
+    Chapter,
+    ChapterError,
+    ChapteredPresentation,
+    chapters_from_step_groups,
+)
+from .exhibition_mode import (
+    PROTECTED_OPERATIONS,
+    VIEW_MODES,
+    ExhibitionState,
+    GuardDecision,
+    ViewMode,
+    guard_action,
+    guarded_operations,
+)
+from .transitions import (
+    TRANSITION_KINDS,
+    StepProjection,
+    TransitionFrame,
+    TransitionKind,
+    TransitionSequence,
+    TransitionSpec,
+    build_transition_sequence,
+    project_resolved_step,
+    sequence_transition,
+)
+from .audience_overlays import (
+    AUDIENCE_HIDDEN_OVERLAY_FLAGS,
+    AUDIENCE_HIDDEN_SCIENCE_FLAGS,
+    AudienceOverlayFlags,
+    HighlightInstruction,
+    apply_audience_overlays,
+    flags_for_state,
+    highlight_for_state,
+)
+from .exhibition_export import (
+    EXHIBITION_PACKAGE_SCHEMA_VERSION,
+    ExhibitionPackagePayload,
+    build_exhibition_package,
+    render_chapter_summary,
+    render_cue_sheet,
+    write_exhibition_package,
+)
 
 __all__ = [
     # sequence
@@ -94,4 +139,30 @@ __all__ = [
     "render_presentation_markdown",
     "render_presenter_notes",
     "write_presentation_files",
+    # v3.8 chapters
+    "Chapter", "ChapterError", "ChapteredPresentation",
+    "CHAPTER_SCHEMA_VERSION", "MAX_CHAPTERS_PER_PRESENTATION",
+    "chapters_from_step_groups",
+    # v3.8 exhibition mode
+    "ExhibitionState", "ViewMode", "VIEW_MODES",
+    "PROTECTED_OPERATIONS",
+    "GuardDecision", "guard_action", "guarded_operations",
+    # v3.8 transitions
+    "TransitionKind", "TRANSITION_KINDS",
+    "TransitionSpec", "TransitionFrame", "TransitionSequence",
+    "StepProjection", "project_resolved_step",
+    "sequence_transition", "build_transition_sequence",
+    # v3.8 audience overlays
+    "AudienceOverlayFlags", "HighlightInstruction",
+    "AUDIENCE_HIDDEN_OVERLAY_FLAGS",
+    "AUDIENCE_HIDDEN_SCIENCE_FLAGS",
+    "flags_for_state", "highlight_for_state",
+    "apply_audience_overlays",
+    # v3.8 exhibition export
+    "EXHIBITION_PACKAGE_SCHEMA_VERSION",
+    "ExhibitionPackagePayload",
+    "build_exhibition_package",
+    "render_chapter_summary",
+    "render_cue_sheet",
+    "write_exhibition_package",
 ]

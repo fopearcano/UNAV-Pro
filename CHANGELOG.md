@@ -4,6 +4,78 @@ All notable changes to UNAV Pro are tracked here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [3.8.0] — Exhibition & Guided Tour Workflows
+
+Exhibition / guided-tour milestone. Goal: polish
+the v3.3 presentation system for museum / dome /
+exhibition / lecture use. **Not** rendering.
+**Not** new authoring surfaces. **Not** a real
+kiosk app. v3.7 runtime preserved byte-for-byte.
+
+### Added
+
+* `unav_pro/presentation/chapters.py` — `Chapter`
+  + `ChapteredPresentation` + `chapters_from_step_groups`.
+  Chapters reference v3.3 step ids; per-chapter
+  overlay / science / annotation flags;
+  sequence-coverage check.
+* `unav_pro/presentation/exhibition_mode.py` —
+  `ExhibitionState` (active flag, locked
+  navigation, view mode, presenter notes
+  toggle, highlight, current chapter) +
+  `PROTECTED_OPERATIONS` guard list +
+  `guard_action` decision helper.
+* `unav_pro/presentation/transitions.py` —
+  pure deterministic sequencer. Four kinds:
+  `hard_cut`, `smooth_camera`,
+  `crossfade_placeholder` (metadata only),
+  `waypoint_pause`.
+* `unav_pro/presentation/audience_overlays.py` —
+  `AudienceOverlayFlags` + `HighlightInstruction`
+  + per-state resolver + strip-list applier.
+* `unav_pro/presentation/exhibition_export.py` —
+  exhibition package (JSON + chapter summary +
+  cue sheet) + atomic writes.
+* `unav_pro/ui/exhibition_panel.py` — pure-
+  Python facade for the dialog's Exhibition
+  panel.
+* New docs:
+  `docs/V3_8_EXHIBITION_WORKFLOWS.md`,
+  `docs/GUIDED_TOUR_CHAPTERS.md`,
+  `docs/AUDIENCE_MODE.md`,
+  `docs/PRESENTATION_TRANSITIONS.md`.
+* `RELEASE_NOTES_v3.8.md`.
+* New tests: `test_v38_chapters`,
+  `test_v38_exhibition_mode`,
+  `test_v38_transitions`,
+  `test_v38_audience_overlays`,
+  `test_v38_exhibition_export`,
+  `test_v38_exhibition_panel`.
+  **169 new tests.**
+
+### Changed
+
+* `unav_pro/presentation/__init__.py` re-exports
+  every new v3.8 surface.
+* `scripts/package_plugin.py` ships the four new
+  docs + the v3.8 release notes.
+* `unav_pro/version.py::PLUGIN_VERSION` 3.7.0 →
+  3.8.0; codename *Exhibition & Guided Tour
+  Workflows*.
+
+### Unchanged
+
+* Every v0.1 → v3.7 feature surface is preserved.
+* Mission JSON, Route JSON, Camera Path JSON,
+  Export Manifest, DB schema, binary format,
+  provenance JSON, presentation JSON byte-
+  identical to v3.7. Chapters live in their own
+  schema.
+* Runtime stays stdlib-only. No threading;
+  no IPC; no rendering; no PRNG state.
+
+---
+
 ## [3.7.0] — Advanced Astronomical Queries
 
 Discovery / search milestone. Goal: turn UNAV into
