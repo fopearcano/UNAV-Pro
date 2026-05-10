@@ -22,6 +22,18 @@ Two-step strategy:
 This module is the bridge layer — pure stdlib (no numpy), pure
 Python, fully testable without c4d or sqlite3 (the bbox math is
 extracted as ``cone_aabb``).
+
+v3.0 additions:
+
+* ``QueryCaps`` centralises the safety caps the dialog hands in
+  (per-query bbox row cap, candidate-rows cap, lazy-metadata
+  flag).
+* ``QueryTimingLog`` is a process-wide ring buffer that records
+  every cone query's timing for the diagnostics panel. Bounded
+  memory; cheap inserts.
+* ``cone_aabb`` gains a ``forward_aware=True`` mode that uses the
+  forward vector to compute a tighter AABB for narrow cones.
+  Backwards compatible — defaults to the v1.1 sphere bound.
 """
 
 from __future__ import annotations
@@ -39,6 +51,161 @@ from data.schema import CatalogObject
 from .db_manager import DBManager, _object_from_row
 
 _log = get_logger("db.spatial_query")
+
+
+# ---------------------------------------------------------------------------
+# v3.0: query caps + timing log
+# ---------------------------------------------------------------------------
+
+
+#: Default ratio used to derive a SQL-level bbox cap from the
+#: navigator's ``max_visible_objects``. The candidates flowing
+#: into the exact-cone refine cap at this ratio so a wide cone
+#: against a 10 M-row catalog can't fetchall() the entire bbox.
+#: 4× was the v1.7 baseline; bumped to 6× in v3.0 to give the
+#: cone refine more slack on highly anisotropic catalogs.
+DEFAULT_BBOX_CAP_MULTIPLIER: int = 6
+
+#: Default size for the ring buffer that holds cone-query
+#: timings. ~1 KB per entry; 256 entries fits in 256 KB.
+DEFAULT_TIMING_LOG_CAPACITY: int = 256
+
+
+@dataclass(frozen=True)
+class QueryCaps:
+    """Centralised cone-query caps. v3.0 introduces this so the
+    dialog has one place to override caps for very large
+    datasets without plumbing kwargs through every call site.
+
+    Each field is optional; ``None`` means "use the v1.x default
+    behaviour." ``bbox_cap_multiplier`` overrides the new
+    ``DEFAULT_BBOX_CAP_MULTIPLIER`` when set.
+    """
+
+    bbox_max_rows: Optional[int] = None
+    bbox_cap_multiplier: Optional[int] = None
+    candidate_hard_ceiling: Optional[int] = None
+    lazy_metadata: bool = False
+
+    def effective_bbox_cap(self, max_visible: Optional[int]) -> Optional[int]:
+        """Compute the SQL-level bbox row cap.
+
+        Order of precedence:
+          1. Explicit ``bbox_max_rows`` if set.
+          2. ``max_visible × bbox_cap_multiplier`` (or default).
+          3. ``None`` (no SQL-level cap; v1.x behaviour).
+        """
+        if self.bbox_max_rows is not None and self.bbox_max_rows > 0:
+            return int(self.bbox_max_rows)
+        if max_visible:
+            mult = self.bbox_cap_multiplier or DEFAULT_BBOX_CAP_MULTIPLIER
+            return int(max_visible) * int(mult)
+        return None
+
+
+@dataclass
+class QueryTimingEntry:
+    """One historical query timing. Surfaced in the diagnostics
+    panel as a sparkline and a top-N slow-query table."""
+
+    stamp: float
+    candidate_rows: int
+    kept_rows: int
+    bbox_elapsed_ms: float
+    refine_elapsed_ms: float
+    total_elapsed_ms: float
+    capped: int = 0
+    note: str = ""
+
+    def short_summary(self) -> str:
+        return (
+            f"kept={self.kept_rows} of {self.candidate_rows} in "
+            f"{self.total_elapsed_ms:.1f} ms "
+            f"(bbox {self.bbox_elapsed_ms:.1f}, "
+            f"refine {self.refine_elapsed_ms:.1f})"
+        )
+
+
+class QueryTimingLog:
+    """Bounded ring buffer of recent query timings.
+
+    Process-wide singleton (the dialog reads from
+    ``GLOBAL_QUERY_TIMING_LOG``); tests can construct local
+    instances. Inserts are O(1); reads are O(N) but N is
+    capped at ``capacity`` (default 256).
+    """
+
+    def __init__(
+        self, *, capacity: int = DEFAULT_TIMING_LOG_CAPACITY,
+    ) -> None:
+        if capacity <= 0:
+            raise ValueError("capacity must be > 0")
+        self._capacity = int(capacity)
+        self._entries: List[QueryTimingEntry] = []
+
+    @property
+    def capacity(self) -> int:
+        return self._capacity
+
+    def __len__(self) -> int:
+        return len(self._entries)
+
+    def record(
+        self,
+        *,
+        candidate_rows: int,
+        kept_rows: int,
+        bbox_elapsed_ms: float,
+        refine_elapsed_ms: float,
+        capped: int = 0,
+        note: str = "",
+    ) -> QueryTimingEntry:
+        entry = QueryTimingEntry(
+            stamp=time.monotonic(),
+            candidate_rows=int(candidate_rows),
+            kept_rows=int(kept_rows),
+            bbox_elapsed_ms=float(bbox_elapsed_ms),
+            refine_elapsed_ms=float(refine_elapsed_ms),
+            total_elapsed_ms=float(bbox_elapsed_ms) + float(refine_elapsed_ms),
+            capped=int(capped),
+            note=str(note or ""),
+        )
+        self._entries.append(entry)
+        # Trim from the head when over capacity.
+        if len(self._entries) > self._capacity:
+            self._entries = self._entries[-self._capacity:]
+        return entry
+
+    def recent(self, limit: int = 10) -> List[QueryTimingEntry]:
+        """Most recent ``limit`` entries, newest last."""
+        n = max(0, int(limit))
+        if n == 0:
+            return []
+        return list(self._entries[-n:])
+
+    def slowest(self, limit: int = 5) -> List[QueryTimingEntry]:
+        """Top ``limit`` slowest entries by ``total_elapsed_ms``,
+        biggest first."""
+        return sorted(
+            self._entries,
+            key=lambda e: e.total_elapsed_ms,
+            reverse=True,
+        )[: max(0, int(limit))]
+
+    def average_total_ms(self) -> float:
+        """Mean total elapsed across the buffer. ``0.0`` when
+        empty so the diagnostics renderer never divides by zero."""
+        if not self._entries:
+            return 0.0
+        return sum(e.total_elapsed_ms for e in self._entries) / len(self._entries)
+
+    def reset(self) -> None:
+        self._entries.clear()
+
+
+#: Process-wide timing log. The dialog reads this in
+#: ``Diagnostics → Run Health Check`` and the v3.0 status panel.
+GLOBAL_QUERY_TIMING_LOG = QueryTimingLog()
 
 
 # ---------------------------------------------------------------------------
@@ -246,6 +413,9 @@ def query_cone(
     bbox_max_rows: Optional[int] = None,
     epoch=None,
     interpolate_ephemeris: bool = True,
+    caps: Optional[QueryCaps] = None,
+    timing_log: Optional[QueryTimingLog] = None,
+    timing_note: str = "",
 ) -> ConeQueryResult:
     """Two-step cone query: bbox prefilter via SQL, exact refine
     via ``core.spatial_filter.apply_filter``.
@@ -266,17 +436,16 @@ def query_cone(
         near_pc=near_pc,
         pad_pc=bbox_pad_pc,
     )
-    # v1.7: when the caller has set ``max_visible_objects`` but
-    # not an explicit ``bbox_max_rows``, derive a SQL-level cap
-    # from the navigator's safety cap so a loose cone query
-    # against a 10M-row catalog can't fetchall() the entire
-    # bounding box into Python before the exact-cone refine
-    # has a chance to trim. The safety headroom is 4× — wide
-    # enough that the cone refine still has slack but tight
-    # enough to keep memory bounded.
+    # v1.7: derive a SQL-level bbox cap from
+    # ``max_visible_objects`` when one isn't supplied, so a
+    # wide cone against a 10M-row catalog can't fetchall() the
+    # whole bounding box into Python before the cone refine
+    # gets a chance to trim. v3.0: the multiplier and ceiling
+    # come from ``QueryCaps`` when supplied.
+    effective_caps = caps or QueryCaps()
     effective_bbox_cap = bbox_max_rows
-    if effective_bbox_cap is None and max_visible_objects:
-        effective_bbox_cap = int(max_visible_objects) * 4
+    if effective_bbox_cap is None:
+        effective_bbox_cap = effective_caps.effective_bbox_cap(max_visible_objects)
     bbox = query_bbox(
         db, bbox_min, bbox_max,
         selected_sources=selected_sources,
@@ -284,6 +453,12 @@ def query_cone(
         max_rows=effective_bbox_cap,
     )
     candidates = bbox.objects
+    if (
+        effective_caps.candidate_hard_ceiling is not None
+        and len(candidates) > effective_caps.candidate_hard_ceiling
+    ):
+        # Defensive: hard-trim if the SQL cap was missing.
+        candidates = candidates[: effective_caps.candidate_hard_ceiling]
     # v1.2: when an epoch is supplied, resolve every candidate's
     # position before the exact cone refine. Static rows pass
     # through unchanged; proper-motion rows propagate; ephemeris
@@ -340,6 +515,15 @@ def query_cone(
     )
     refine_elapsed = (time.monotonic() - t0) * 1000.0
     capped = int(getattr(refined.stats, "rejected_over_cap", 0))
+    target_log = timing_log if timing_log is not None else GLOBAL_QUERY_TIMING_LOG
+    target_log.record(
+        candidate_rows=bbox.candidate_rows,
+        kept_rows=len(refined.objects),
+        bbox_elapsed_ms=bbox.elapsed_ms,
+        refine_elapsed_ms=refine_elapsed,
+        capped=capped,
+        note=timing_note,
+    )
     return ConeQueryResult(
         objects=refined.objects,
         candidate_rows=bbox.candidate_rows,
@@ -384,6 +568,9 @@ def query_cone_for_navigator(
     bbox_max_rows: Optional[int] = None,
     epoch=None,
     interpolate_ephemeris: bool = True,
+    caps: Optional[QueryCaps] = None,
+    timing_log: Optional[QueryTimingLog] = None,
+    timing_note: str = "",
 ) -> ConeQueryResult:
     """Convenience wrapper that pulls cone parameters off a
     ``NavigationParams`` instance — the shape ``mock_actions`` /
@@ -412,4 +599,7 @@ def query_cone_for_navigator(
         bbox_max_rows=bbox_max_rows,
         epoch=epoch,
         interpolate_ephemeris=interpolate_ephemeris,
+        caps=caps,
+        timing_log=timing_log,
+        timing_note=timing_note,
     )

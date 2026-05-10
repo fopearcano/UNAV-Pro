@@ -189,6 +189,72 @@ the dataset registry's `<entry.name>:` namespace layers on top.
 Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
 
+### V. Large-Scale Workflow Optimization (v3.0)
+
+v3.0 is the **scalability and streaming** milestone. Goal:
+handle very large astronomical datasets stably inside
+Cinema 4D. **Not** rendering. **Not** new authoring
+surfaces. The runtime feature set is v2.5 byte-identical;
+v3.0 adds the scaffolding underneath that makes the
+existing surface survive 10 M-row catalogs and a working
+artist's iterate-fast loop.
+
+What's new:
+
+* **Chunk-reuse cache** (`unav_pro/db/streaming.py::ChunkReuseCache`).
+  LRU keyed by quantised pose + cone parameters + filter
+  sets + epoch. Re-syncing at the same navigator pose
+  serves the previous result. Cache invalidates on dataset
+  change, epoch advance, or document save.
+* **Paged loading** (`iter_paged_cone`). Streams a cone-
+  query result page-by-page (default 5 000 rows per page)
+  so a 250 K-row sector dispatches through the task queue
+  without materialising the whole list.
+* **Cone-query caps** (`QueryCaps` in
+  `unav_pro/db/spatial_query.py`). Centralises bbox row
+  caps + multipliers + hard ceilings. The default
+  multiplier was bumped from 4× (v1.7) to 6× to give the
+  cone refine more slack on anisotropic catalogs.
+* **Query timing log** (`GLOBAL_QUERY_TIMING_LOG`).
+  Bounded ring buffer of recent cone-query timings; the
+  diagnostics panel renders "recent" + "slowest" + "mean".
+* **Partial-rebuild planning** in `core/scene_sync.py`:
+  `SyncDiff.is_unchanged`, `plan_overlay_rebuild`,
+  `plan_science_rebuild`, `plan_mission_update`. The C4D
+  builders read these to skip backend round-trips when
+  nothing changed.
+* **Task queue** (`unav_pro/core/task_queue.py`).
+  Cooperative single-threaded queue with progress +
+  cancellation. **No threads.** C4D API calls stay on the
+  main thread. Long operations report progress between
+  steps and honour cancellation cooperatively.
+  `make_chunked_task(...)` builds a runner that walks
+  units, reports progress, and exits early on cancel.
+* **Diagnostics** (`unav_pro/core/diagnostics.py`). Pure
+  helpers for the diagnostics panel: dataset memory
+  estimate, visible-sector estimate, long-operation
+  classifier, cache + timing renderers, overlay / science
+  layer counts. `build_diagnostics_report(...)` is the
+  single entry point.
+* **Release artefacts** — `RELEASE_NOTES_v3.0.md`,
+  CHANGELOG entry; the dialog status line shows the new
+  version + codename on every open. Packaging script
+  ships four new docs + the v3.0 release notes.
+* **Tests** — `test_v30_streaming`,
+  `test_v30_query_caps`, `test_v30_partial_sync`,
+  `test_v30_task_queue`, `test_v30_diagnostics`. **118
+  new tests; 1895 Python tests pass.**
+
+Walkthroughs:
+[`docs/V3_0_SCALABILITY_AND_STREAMING.md`](docs/V3_0_SCALABILITY_AND_STREAMING.md)
+— milestone overview;
+[`docs/LARGE_DATA_WORKFLOWS.md`](docs/LARGE_DATA_WORKFLOWS.md)
+— artist-facing patterns;
+[`docs/SAFE_TASK_QUEUE_MODEL.md`](docs/SAFE_TASK_QUEUE_MODEL.md)
+— cooperative scheduling model;
+[`docs/QUERY_OPTIMIZATION.md`](docs/QUERY_OPTIMIZATION.md)
+— `db/spatial_query.py` + cache internals.
+
 ### U. Docs, Onboarding & Workflow Polish (v2.5)
 
 v2.5 is the documentation, onboarding, and workflow-polish

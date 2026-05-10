@@ -43,7 +43,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 try:
     import c4d  # type: ignore
@@ -90,7 +90,21 @@ class SyncDiff:
     def total_visible(self) -> int:
         return len(self.added_uids) + len(self.kept_uids)
 
+    @property
+    def is_unchanged(self) -> bool:
+        """v3.0: True iff nothing was added or removed (and the
+        cap didn't kick in). Lets the C4D dispatch skip the
+        backend round-trip when the artist nudged the navigator
+        within the same sector and the visible set is identical."""
+        return (
+            not self.added_uids
+            and not self.removed_uids
+            and not self.capped_uids
+        )
+
     def short_summary(self) -> str:
+        if self.is_unchanged:
+            return f"unchanged ({len(self.kept_uids)} visible)"
         parts = [
             f"+{len(self.added_uids)} added",
             f"={len(self.kept_uids)} kept",
@@ -432,3 +446,264 @@ def sync_visible_sector(
         getattr(backend, "mode", "?"),
     )
     return diff
+
+
+# ---------------------------------------------------------------------------
+# v3.0: partial-rebuild planning
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class OverlayRebuildPlan:
+    """Result of comparing two ``OverlaySettings`` snapshots.
+
+    The C4D builder uses ``rebuild_required`` to decide whether
+    to tear the overlays down and rebuild from scratch
+    (the v2.0 behaviour) or short-circuit and leave the existing
+    geometry alone (the v3.0 fast path).
+    """
+
+    rebuild_required: bool = False
+    changed_kinds: List[str] = field(default_factory=list)
+    geometry_dirty: bool = False
+    visibility_only: bool = False
+    reason: str = ""
+
+
+def plan_overlay_rebuild(
+    previous: Optional[Any],
+    current: Optional[Any],
+) -> OverlayRebuildPlan:
+    """Compare two ``OverlaySettings`` snapshots and decide
+    whether the overlays need a rebuild.
+
+    Pure helper; no c4d. ``previous`` is ``None`` on first run,
+    in which case the plan always reports ``rebuild_required``.
+
+    The fields driving rebuild are: any ``show_*`` flag flip
+    (visibility only — cheap rebuild), and any geometry knob
+    change (``radius_pc``, ``segment_count``, ``grid_step_pc``,
+    ``grid_extent_pc``, ``distance_ring_radii_pc``,
+    ``corridor_width_pc``, ``label_height_pc``, ``opacity``).
+    """
+    if previous is None and current is None:
+        return OverlayRebuildPlan(
+            rebuild_required=False, reason="no overlays in either state",
+        )
+    if previous is None or current is None:
+        return OverlayRebuildPlan(
+            rebuild_required=True,
+            geometry_dirty=True,
+            reason="overlay state appeared or disappeared",
+        )
+
+    visibility_fields = (
+        "show_grid", "show_galactic_plane", "show_ecliptic_plane",
+        "show_distance_rings", "show_sector_cone",
+        "show_route_corridor", "show_waypoint_labels",
+    )
+    geometry_fields = (
+        "radius_pc", "segment_count", "grid_step_pc",
+        "grid_extent_pc", "corridor_width_pc",
+        "label_height_pc", "opacity",
+    )
+
+    changed_kinds: List[str] = []
+    for fname in visibility_fields:
+        if getattr(previous, fname, None) != getattr(current, fname, None):
+            changed_kinds.append(fname.replace("show_", ""))
+
+    geometry_dirty = False
+    for fname in geometry_fields:
+        if getattr(previous, fname, None) != getattr(current, fname, None):
+            geometry_dirty = True
+            break
+
+    prev_rings = list(getattr(previous, "distance_ring_radii_pc", []) or [])
+    cur_rings = list(getattr(current, "distance_ring_radii_pc", []) or [])
+    if prev_rings != cur_rings:
+        geometry_dirty = True
+
+    if not changed_kinds and not geometry_dirty:
+        return OverlayRebuildPlan(
+            rebuild_required=False,
+            reason="overlay settings unchanged",
+        )
+
+    visibility_only = bool(changed_kinds) and not geometry_dirty
+    return OverlayRebuildPlan(
+        rebuild_required=True,
+        changed_kinds=changed_kinds,
+        geometry_dirty=geometry_dirty,
+        visibility_only=visibility_only,
+        reason=(
+            "visibility flag(s) toggled"
+            if visibility_only
+            else "geometry parameters changed"
+        ),
+    )
+
+
+@dataclass
+class ScienceRebuildPlan:
+    """Same shape as ``OverlayRebuildPlan`` for science layers."""
+
+    rebuild_required: bool = False
+    changed_kinds: List[str] = field(default_factory=list)
+    reason: str = ""
+
+
+def plan_science_rebuild(
+    previous: Optional[Any],
+    current: Optional[Any],
+) -> ScienceRebuildPlan:
+    """Compare two ``ScienceLayerSettings`` snapshots.
+
+    Each ``show_*`` flag flip triggers a rebuild for that
+    kind only — the C4D builder can preserve other kinds'
+    children. Numeric parameter changes (``shell_radii_pc``,
+    ``vector_scale``, etc.) trigger a full rebuild because
+    the geometry is shell- / arrow- / region-shaped per
+    setting.
+    """
+    if previous is None and current is None:
+        return ScienceRebuildPlan(reason="no science state in either")
+    if previous is None or current is None:
+        return ScienceRebuildPlan(
+            rebuild_required=True, reason="science state appeared or disappeared",
+        )
+
+    visibility_fields = (
+        "show_distance_shells", "show_redshift_shells",
+        "show_magnitude_shells", "show_motion_vectors",
+        "show_catalog_source_regions", "show_solar_system_orbits",
+        "show_constellation_boundaries", "show_object_density_volume",
+    )
+    changed: List[str] = []
+    for fname in visibility_fields:
+        if getattr(previous, fname, None) != getattr(current, fname, None):
+            changed.append(fname.replace("show_", ""))
+
+    # Any field that isn't a visibility flag is a parameter
+    # field; we treat any change as a full rebuild trigger
+    # rather than a per-kind rebuild.
+    all_prev = {
+        f: getattr(previous, f, None)
+        for f in dir(previous)
+        if not f.startswith("_") and not callable(getattr(previous, f))
+    }
+    all_cur = {
+        f: getattr(current, f, None)
+        for f in dir(current)
+        if not f.startswith("_") and not callable(getattr(current, f))
+    }
+    parameters_dirty = False
+    for fname in set(all_prev) | set(all_cur):
+        if fname in visibility_fields:
+            continue
+        if all_prev.get(fname) != all_cur.get(fname):
+            parameters_dirty = True
+            break
+
+    if not changed and not parameters_dirty:
+        return ScienceRebuildPlan(reason="science settings unchanged")
+
+    return ScienceRebuildPlan(
+        rebuild_required=True,
+        changed_kinds=changed,
+        reason=(
+            "science visibility flag(s) toggled"
+            if changed and not parameters_dirty
+            else "science parameter(s) changed"
+        ),
+    )
+
+
+@dataclass
+class MissionUpdatePlan:
+    """Result of comparing two ``Mission`` snapshots.
+
+    The C4D mission-preview builder uses this to decide whether
+    to rebuild the spline + label nulls. ``waypoint_changes``
+    lists (index, kind) tuples for inspector logging.
+    """
+
+    rebuild_required: bool = False
+    waypoint_changes: List[Tuple[int, str]] = field(default_factory=list)
+    title_changed: bool = False
+    description_changed: bool = False
+    reason: str = ""
+
+
+def _waypoint_signature(wp: Any) -> Tuple:
+    """Stable signature of a mission waypoint for comparison.
+
+    Pulls only the path-affecting fields. Tags / notes don't
+    affect the spline so they're excluded; rebuilding the
+    preview because the artist edited a note would be wasteful.
+    """
+    return (
+        getattr(wp, "kind", None),
+        getattr(wp, "uid", None),
+        getattr(wp, "label", None),
+        getattr(wp, "x_c4d", None),
+        getattr(wp, "y_c4d", None),
+        getattr(wp, "z_c4d", None),
+        getattr(wp, "duration_seconds", None),
+        getattr(wp, "epoch_jd", None),
+    )
+
+
+def plan_mission_update(
+    previous: Optional[Any],
+    current: Optional[Any],
+) -> MissionUpdatePlan:
+    """Compare two ``Mission`` snapshots and report the
+    minimum rebuild scope.
+
+    ``waypoint_changes`` reports per-index transitions —
+    ``"added"``, ``"removed"``, or ``"changed"``. The
+    C4D builder can use this to decide whether to rebuild
+    just the affected waypoint nulls or the whole spline.
+    """
+    if previous is None and current is None:
+        return MissionUpdatePlan(reason="no mission in either state")
+    if previous is None or current is None:
+        return MissionUpdatePlan(
+            rebuild_required=True,
+            reason="mission appeared or disappeared",
+        )
+
+    title_changed = getattr(previous, "title", None) != getattr(current, "title", None)
+    desc_changed = getattr(previous, "description", None) != getattr(current, "description", None)
+
+    prev_wps = list(getattr(previous, "waypoints", []) or [])
+    cur_wps = list(getattr(current, "waypoints", []) or [])
+
+    changes: List[Tuple[int, str]] = []
+    n = max(len(prev_wps), len(cur_wps))
+    for i in range(n):
+        prev_sig = _waypoint_signature(prev_wps[i]) if i < len(prev_wps) else None
+        cur_sig = _waypoint_signature(cur_wps[i]) if i < len(cur_wps) else None
+        if prev_sig is None and cur_sig is not None:
+            changes.append((i, "added"))
+        elif cur_sig is None and prev_sig is not None:
+            changes.append((i, "removed"))
+        elif prev_sig != cur_sig:
+            changes.append((i, "changed"))
+
+    rebuild = bool(changes)
+    if not rebuild and not title_changed and not desc_changed:
+        return MissionUpdatePlan(reason="mission unchanged")
+
+    return MissionUpdatePlan(
+        rebuild_required=rebuild,
+        waypoint_changes=changes,
+        title_changed=title_changed,
+        description_changed=desc_changed,
+        reason=(
+            "waypoint(s) changed"
+            if rebuild
+            else "metadata only (title/description); preview unaffected"
+        ),
+    )

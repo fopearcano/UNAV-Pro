@@ -4,6 +4,72 @@ All notable changes to UNAV Pro are tracked here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [3.0.0] — Large-Scale Workflow Optimization
+
+Scalability + streaming milestone. Goal: handle very
+large astronomical datasets stably inside Cinema 4D.
+**Not** rendering. **Not** new authoring surfaces. The
+runtime feature surface is v2.5 byte-identical; v3.0
+adds the scaffolding underneath.
+
+### Added
+
+* `unav_pro/db/streaming.py` — paged dataset loading
+  (`iter_paged_cone`), chunk-reuse LRU cache
+  (`ChunkReuseCache`), repeated-query detector.
+  Cache keys are quantised over pose + cone +
+  filter sets + epoch so near-identical poses reuse
+  results.
+* `unav_pro/core/task_queue.py` — cooperative
+  single-threaded task queue with progress +
+  cancellation. **No threads.** `Task`, `TaskQueue`,
+  `make_chunked_task`, `GLOBAL_TASK_QUEUE`.
+* `unav_pro/core/diagnostics.py` — pure helpers for
+  the diagnostics panel: dataset memory estimate,
+  visible-sector estimate, long-operation
+  classifier, cache + timing renderers, overlay /
+  science layer counts.
+* New docs:
+  `docs/V3_0_SCALABILITY_AND_STREAMING.md`,
+  `docs/LARGE_DATA_WORKFLOWS.md`,
+  `docs/SAFE_TASK_QUEUE_MODEL.md`,
+  `docs/QUERY_OPTIMIZATION.md`.
+* `RELEASE_NOTES_v3.0.md`.
+* New v3.0 tests:
+  `test_v30_streaming`, `test_v30_query_caps`,
+  `test_v30_partial_sync`, `test_v30_task_queue`,
+  `test_v30_diagnostics`. **118 new tests.**
+
+### Changed
+
+* `unav_pro/db/spatial_query.py` gains `QueryCaps`,
+  `QueryTimingLog`, and `GLOBAL_QUERY_TIMING_LOG`.
+  `query_cone` / `query_cone_for_navigator` accept
+  `caps=`, `timing_log=`, `timing_note=` kwargs. The
+  default bbox-cap multiplier was bumped from 4×
+  (v1.7) to 6×.
+* `unav_pro/core/scene_sync.py` gains
+  `SyncDiff.is_unchanged` and three rebuild
+  planners: `plan_overlay_rebuild`,
+  `plan_science_rebuild`, `plan_mission_update`.
+* `scripts/package_plugin.py` ships the four new
+  docs + the v3.0 release notes;
+  `REQUIRED_FILES` updated.
+* `unav_pro/version.py::PLUGIN_VERSION` 2.5.0 →
+  3.0.0; codename *Large-Scale Workflow
+  Optimization*.
+
+### Unchanged
+
+* Every v0.1 → v2.5 feature surface is preserved.
+* No new on-disk schemas. Mission JSON, Route JSON,
+  Camera Path JSON, Export Manifest, DB schema,
+  binary format are byte-identical to v2.5.
+* Runtime stays stdlib-only. No threading; no IPC;
+  no rendering.
+
+---
+
 ## [2.5.0] — Docs, Onboarding & Workflow Polish
 
 Documentation, onboarding, and workflow-polish milestone.

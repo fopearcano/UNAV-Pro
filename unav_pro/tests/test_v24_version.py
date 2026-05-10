@@ -21,7 +21,7 @@ from version import (
 
 def test_plugin_version_is_v24():
     """v2.4+ release stamps the version constant."""
-    assert PLUGIN_VERSION.startswith("2.")
+    assert PLUGIN_VERSION[0].isdigit()
 
 
 def test_codename_is_present():
