@@ -189,6 +189,77 @@ the dataset registry's `<entry.name>:` namespace layers on top.
 Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
 
+### Y. Presentation & Educational Mode (v3.3)
+
+v3.3 is the **guided-presentation** milestone. Goal:
+let UNAV drive lectures, exhibitions, scientific
+storytelling, and cinematic demonstrations inside
+Cinema 4D. **Not** rendering. **Not** new authoring
+surfaces. v3.2 runtime preserved byte-identical;
+v3.3 adds a declarative presentation layer on top.
+
+What's new:
+
+* **Presentation sequences**
+  (`unav_pro/presentation/presentation_sequence.py`).
+  `PresentationSequence` (top-level) +
+  `PresentationStep` (one step). Each step owns a
+  camera pose, an active waypoint reference, overlay
+  + science-layer flags, annotation visibility, an
+  active epoch, narration, presenter notes, and a
+  pause duration. Optional fields default to
+  "inherit"; `resolved_steps()` produces
+  deterministic post-inheritance records.
+* **Runtime tracker**
+  (`presentation_state.py`).
+  `PresentationState` with explicit lifecycle
+  (idle / running / paused / finished),
+  `next_step` / `previous_step` / `jump_to`
+  navigation, and a `lock_navigation(...)` hook
+  for kiosk-stable views.
+* **Per-step annotation visibility** + **per-step
+  overlay / science states**. New helpers
+  resolve and diff visibility / flag transitions
+  so the C4D builder can do minimal updates
+  between steps (using the v3.0 partial-rebuild
+  planners).
+* **Manager** (`presentation/manager.py`). Disk-
+  backed CRUD store mirroring the v1.4
+  `MissionManager`. Atomic writes; corruption-
+  resistant reload.
+* **Export** (`presentation/export.py`). Markdown
+  summary (with or without presenter notes), plain-
+  text presenter notes dump, and a
+  `PresentationPackagePayload` that rides into the
+  v2.3 export package.
+* **Presentation panel facade**
+  (`unav_pro/ui/presentation_panel.py`). Pure-Python
+  wrappers for the dialog's eight panel buttons
+  (Start / Next / Previous / Jump / Pause / Resume
+  / End / Presenter Notes).
+* **Release artefacts** — `RELEASE_NOTES_v3.3.md`,
+  CHANGELOG entry; the dialog status line shows the
+  new version + codename on every open. Packaging
+  script ships four new docs + v3.3 release notes.
+* **Tests** — `test_v33_presentation_sequence`,
+  `test_v33_presentation_state`,
+  `test_v33_annotations`,
+  `test_v33_overlay_states`,
+  `test_v33_manager`,
+  `test_v33_export`,
+  `test_v33_panel_actions`. **152 new tests; 2277
+  Python tests pass.**
+
+Walkthroughs:
+[`docs/V3_3_PRESENTATION_MODE.md`](docs/V3_3_PRESENTATION_MODE.md)
+— milestone overview;
+[`docs/PRESENTATION_SEQUENCES.md`](docs/PRESENTATION_SEQUENCES.md)
+— step + sequence shape;
+[`docs/EDUCATIONAL_WORKFLOWS.md`](docs/EDUCATIONAL_WORKFLOWS.md)
+— patterns for lectures + exhibitions;
+[`docs/PRESENTER_NOTES.md`](docs/PRESENTER_NOTES.md)
+— the notes layer.
+
 ### X. Data Integrity & Provenance (v3.2)
 
 v3.2 is the **production validation and scientific data

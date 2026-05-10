@@ -4,6 +4,73 @@ All notable changes to UNAV Pro are tracked here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [3.3.0] — Presentation & Educational Mode
+
+Guided-presentation milestone. Goal: let UNAV drive
+lectures, exhibitions, scientific storytelling, and
+cinematic demonstrations inside Cinema 4D. **Not**
+rendering. **Not** new authoring surfaces. v3.2
+runtime preserved byte-identical; v3.3 adds a
+declarative presentation layer on top.
+
+### Added
+
+* `unav_pro/presentation/` (new package):
+  * `presentation_sequence.py` — declarative
+    sequence shape (`PresentationSequence`,
+    `PresentationStep`, `ResolvedStep`); steps
+    inherit Optional fields from the previous step,
+    so `resolved_steps()` yields complete records.
+  * `presentation_state.py` — runtime tracker
+    (`PresentationState` with idle / running /
+    paused / finished states; navigation;
+    `lock_navigation`).
+  * `annotations.py` — per-step visibility +
+    highlight resolver + diff helper.
+  * `overlay_states.py` — per-step overlay /
+    science-layer flag merge + diff.
+  * `manager.py` — disk-backed CRUD store
+    mirroring the v1.4 `MissionManager` shape.
+  * `export.py` — Markdown summary, presenter-
+    notes plain-text dump, package payload for
+    the v2.3 export builder.
+* `unav_pro/ui/presentation_panel.py` — pure-Python
+  facade for the dialog's *Presentation* panel
+  (Start / Next / Previous / Jump / Pause / Resume
+  / End / Presenter Notes).
+* New docs:
+  `docs/V3_3_PRESENTATION_MODE.md`,
+  `docs/PRESENTATION_SEQUENCES.md`,
+  `docs/EDUCATIONAL_WORKFLOWS.md`,
+  `docs/PRESENTER_NOTES.md`.
+* `RELEASE_NOTES_v3.3.md`.
+* New tests: `test_v33_presentation_sequence`,
+  `test_v33_presentation_state`,
+  `test_v33_annotations`,
+  `test_v33_overlay_states`,
+  `test_v33_manager`,
+  `test_v33_export`,
+  `test_v33_panel_actions`. **152 new tests.**
+
+### Changed
+
+* `scripts/package_plugin.py` ships the four new
+  docs + the v3.3 release notes.
+* `unav_pro/version.py::PLUGIN_VERSION` 3.2.0 →
+  3.3.0; codename *Presentation & Educational
+  Mode*.
+
+### Unchanged
+
+* Every v0.1 → v3.2 feature surface is preserved.
+* Mission JSON, Route JSON, Camera Path JSON,
+  Export Manifest, DB schema, binary format,
+  provenance JSON are byte-identical to v3.2.
+* Runtime stays stdlib-only. No threading; no IPC;
+  no rendering.
+
+---
+
 ## [3.2.0] — Data Integrity & Provenance
 
 Production validation and scientific data integrity
