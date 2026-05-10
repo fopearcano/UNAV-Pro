@@ -125,7 +125,7 @@ def test_normal_path_not_excluded():
 def test_read_version_finds_canonical_string():
     version = _read_version(_REPO_ROOT)
     assert version != "0.0.0"
-    assert version.startswith("2.4")
+    assert version.startswith("2.")
 
 
 def test_read_version_returns_zero_on_missing_repo(tmp_path):
@@ -213,7 +213,7 @@ def test_build_release_zip_filename_matches_version(tmp_path):
     # repo's dist/) without polluting the repo. We just
     # verify the version is reachable.
     version = _read_version(_REPO_ROOT)
-    assert version.startswith("2.4")
+    assert version.startswith("2.")
 
 
 def test_build_release_zip_with_synthetic_repo(tmp_path):

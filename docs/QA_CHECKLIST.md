@@ -63,7 +63,97 @@ issues that come up during QA see
     (`catalog.jsonl`, `mission.json`, `route.json`,
     `README.md`).
 
-## 5. Cinema 4D smoke test
+## 5. Manual end-to-end install test
+
+The release-engineer follows this on a *fresh* machine
+(or on a Cinema 4D install with no prior UNAV config) to
+prove the published zip works for an artist who has never
+run UNAV before. Each step has an expected observable
+outcome — if any step deviates, file a release blocker.
+
+1. **Install from package.**
+   * [ ] Download the release zip from the GitHub release
+     page (not the local `dist/` build).
+   * [ ] Unzip it into the Cinema 4D plugins folder
+     (`~/Library/Preferences/Maxon/.../plugins/` on macOS;
+     `%APPDATA%\Maxon\...\plugins\` on Windows).
+   * [ ] Restart Cinema 4D.
+   * [ ] `Extensions → Universal Navigator Pro` is listed
+     in the menu.
+   * [ ] Opening the dialog shows the new release version
+     in the status log.
+
+2. **Load sample.**
+   * [ ] `Dataset Manager → Add Dataset` accepts
+     `samples/minimal_unav_demo/catalog.jsonl`.
+   * [ ] The dataset appears in the active list with five
+     rows.
+   * [ ] No errors in the status log.
+
+3. **Sync visible sector.**
+   * [ ] Click `Sync Visible Sector`.
+   * [ ] `UNAV_Starfield → UNAV_VisibleSector` appears in
+     the Object Manager with five children.
+   * [ ] The diff summary in the status log reports
+     `added=5, updated=0, removed=0`.
+
+4. **Inspect metadata.**
+   * [ ] Select `demo:5` in the OM.
+   * [ ] Click `Inspect Selected Object`.
+   * [ ] The metadata panel renders the v1.3 nine-section
+     view (identity, position, motion, photometry,
+     classification, derived, summary, glossary,
+     interpretation).
+   * [ ] Numeric fields display with units; no `None` /
+     `null` cells.
+
+5. **Create mission.**
+   * [ ] `Missions → Import` loads
+     `samples/minimal_unav_demo/mission.json`.
+   * [ ] Five waypoints appear in the Mission panel.
+   * [ ] `Preview Path` drops `UNAV_Mission_Preview` (a
+     Catmull-Rom spline) under the scene root.
+   * [ ] `▶ Play` scrubs the camera through the path
+     without errors.
+
+6. **Bake timeline.**
+   * [ ] Click `Bake to Timeline`.
+   * [ ] The bake summary reports `frames > 0,
+     waypoints=5, markers >= 5`.
+   * [ ] The Timeline shows camera + navigator
+     keyframes (PSR + nav fields).
+   * [ ] `UNAV:waypoint:*`, `UNAV:sync:*` markers exist
+     at the expected frames.
+   * [ ] Scrubbing the timeline animates the camera
+     smoothly.
+
+7. **Export package.**
+   * [ ] `Export → Export Full Package…` to a fresh
+     directory.
+   * [ ] The output directory contains a `manifest.json`
+     plus eight per-asset files (mission, route,
+     waypoints CSV, route Markdown, camera path,
+     timeline keyframes, science layer, dataset
+     summary).
+   * [ ] `manifest.json` validates against the
+     `EXPORT_PACKAGE_FORMAT.md` schema.
+   * [ ] No partial / `.tmp` files left behind.
+
+8. **Reload plugin.**
+   * [ ] Close Cinema 4D.
+   * [ ] Reopen the same scene.
+   * [ ] `Load UNAV State` restores navigator, datasets,
+     missions, overlays, and science layers.
+   * [ ] The previously-baked timeline keyframes and
+     `UNAV:` markers are still present.
+   * [ ] Re-running `▶ Play` produces the same camera
+     motion as before reload.
+
+If every step is green: the release is artist-ready.
+If any step fails: block the release and triage via
+[`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
+
+## 6. Cinema 4D smoke test
 
 * [ ] On a clean Cinema 4D 2023+ install (no prior UNAV
   config), unzip the release into the plugins folder.
@@ -89,7 +179,7 @@ issues that come up during QA see
   `UNAV_Export/` directory with the manifest +
   per-asset files.
 
-## 6. Backwards compatibility
+## 7. Backwards compatibility
 
 * [ ] Open a Cinema 4D scene saved with the previous
   release version. Verify:
@@ -98,7 +188,7 @@ issues that come up during QA see
   * No "schema version unrecognised" warnings.
   * Re-saving the state produces the same JSON shape.
 
-## 7. Docs
+## 8. Docs
 
 * [ ] `README.md` mentions the new version.
 * [ ] `RELEASE_NOTES_v<version>.md` is included in the
@@ -109,7 +199,7 @@ issues that come up during QA see
 * [ ] All cross-references in the new release-notes
   resolve to existing docs.
 
-## 8. Publish
+## 9. Publish
 
 * [ ] Tag the commit (`git tag v<version>`).
 * [ ] Push the tag (`git push origin v<version>`).
@@ -117,7 +207,7 @@ issues that come up during QA see
 * [ ] Paste the contents of `RELEASE_NOTES_v<version>.md`
   into the GitHub release description.
 
-## 9. Post-publish
+## 10. Post-publish
 
 * [ ] Verify the GitHub release page renders the release
   notes correctly.

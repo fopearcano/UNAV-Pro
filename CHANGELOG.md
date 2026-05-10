@@ -4,6 +4,53 @@ All notable changes to UNAV Pro are tracked here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [2.5.0] — Docs, Onboarding & Workflow Polish
+
+Documentation, onboarding, and workflow-polish milestone.
+No new runtime systems; no rendering; no IPC; no
+RelativityRender bridge. Full v2.4 runtime is preserved
+byte-for-byte.
+
+### Added
+
+* `docs/USER_MANUAL.md` — canonical 12-section artist
+  workflow reference.
+* `docs/ARTIST_QUICKSTART.md` — install → first cinematic
+  in twelve numbered steps.
+* `docs/TD_GUIDE.md` — technical-director / data-pipeline
+  guide (schemas, performance limits, lifecycle).
+* `docs/ROADMAP.md` — implemented / planned / optional /
+  explicitly out-of-scope. Restates the rendering / IPC /
+  RelativityRender boundary.
+* `RELEASE_NOTES_v2.5.md` — this milestone's release notes.
+* `unav_pro/core/workflow_presets.py` — thin artist-facing
+  wrapper over the v1.9 voyage templates. Five presets
+  with cinematic-ready defaults and recommended overlays
+  per preset.
+* `unav_pro/tests/test_v25_workflow_presets.py` and
+  `unav_pro/tests/test_v25_docs.py` — new v2.5 coverage.
+
+### Changed
+
+* `docs/QA_CHECKLIST.md` gains §5 — an eight-step manual
+  end-to-end install test the release engineer runs on a
+  fresh Cinema 4D.
+* `scripts/package_plugin.py`'s `PACKAGE_INCLUDE`,
+  `PACKAGE_DOCS`, and `REQUIRED_FILES` lists pick up the
+  four new docs + the v2.5 release notes.
+* `unav_pro/version.py::PLUGIN_VERSION` bumped to
+  `2.5.0`; codename updated to *Docs, Onboarding &
+  Workflow Polish*.
+
+### Unchanged
+
+* Every v0.1 → v2.4 feature surface is preserved.
+* Mission JSON, Route JSON, Camera Path JSON, Export
+  Manifest, DB schema, and binary format are unchanged.
+* Runtime stays stdlib-only.
+
+---
+
 ## [2.4.0] — Production QA & Packaging
 
 Release-engineering milestone. No new navigation or rendering

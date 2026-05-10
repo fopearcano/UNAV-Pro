@@ -52,6 +52,7 @@ PACKAGE_INCLUDE: tuple = (
     "README.md",
     "CHANGELOG.md",
     "RELEASE_NOTES_v2.4.md",
+    "RELEASE_NOTES_v2.5.md",
     "samples/minimal_unav_demo",
 )
 
@@ -66,6 +67,10 @@ PACKAGE_DOCS: tuple = (
     "docs/QA_CHECKLIST.md",
     "docs/KNOWN_LIMITATIONS.md",
     "docs/PLUGIN_LIFECYCLE.md",
+    "docs/USER_MANUAL.md",
+    "docs/ARTIST_QUICKSTART.md",
+    "docs/TD_GUIDE.md",
+    "docs/ROADMAP.md",
 )
 
 #: Path-name parts that exclude any directory or file
@@ -120,8 +125,13 @@ REQUIRED_FILES: tuple = (
     "README.md",
     "CHANGELOG.md",
     "RELEASE_NOTES_v2.4.md",
+    "RELEASE_NOTES_v2.5.md",
     "docs/INSTALL_C4D_2023_PLUS.md",
     "docs/QUICK_START.md",
+    "docs/USER_MANUAL.md",
+    "docs/ARTIST_QUICKSTART.md",
+    "docs/TD_GUIDE.md",
+    "docs/ROADMAP.md",
     "samples/minimal_unav_demo/README.md",
 )
 

@@ -189,6 +189,62 @@ the dataset registry's `<entry.name>:` namespace layers on top.
 Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
 
+### U. Docs, Onboarding & Workflow Polish (v2.5)
+
+v2.5 is the documentation, onboarding, and workflow-polish
+release. **No new runtime systems**, no rendering, no IPC,
+no RelativityRender bridge. The plugin's runtime surface is
+byte-for-byte the same as v2.4; v2.5 adds the artist-facing
+material that makes the v0.1 → v2.4 feature set learnable
+in an afternoon.
+
+What's new:
+
+* **`docs/USER_MANUAL.md`** — canonical 12-section
+  workflow reference. Read top-down on day one; skim by
+  section header thereafter.
+* **`docs/ARTIST_QUICKSTART.md`** — install → first
+  cinematic in twelve numbered steps.
+* **`docs/TD_GUIDE.md`** — technical-director / data-
+  pipeline guide: schemas, performance limits (max
+  visible objects, MAX_WAYPOINTS_PER_MISSION,
+  MAX_FRAMES_FOR_BAKE, etc.), scene-sync model,
+  timeline-bake model, lifecycle.
+* **`docs/ROADMAP.md`** — implemented / planned /
+  optional / explicitly out-of-scope. Restates the
+  rendering / IPC / RelativityRender boundary as the v2.5
+  contract.
+* **`docs/QA_CHECKLIST.md`** §5 — eight-step manual end-
+  to-end install test the release engineer runs on a
+  fresh Cinema 4D (install → load sample → sync → inspect
+  → mission → bake → export → reload).
+* **`unav_pro/core/workflow_presets.py`** — thin artist-
+  facing wrapper over the v1.9 voyage templates. Five
+  presets (Solar System Flythrough, Stellar
+  Neighbourhood, Hubble Flow Voyage, Blank Voyage,
+  Selection Flythrough) with cinematic-ready defaults
+  and recommended overlays per preset. Wrapper is fully
+  transparent — every preset still resolves to a v1.9
+  template builder, so the on-disk Mission JSON is
+  byte-identical to the existing template path.
+* **Release artefacts** — `RELEASE_NOTES_v2.5.md`,
+  CHANGELOG entry; the dialog status line shows the new
+  version + codename on every open. Packaging script
+  ships the four new docs and the v2.5 release notes.
+* **Tests** — `test_v25_workflow_presets` (preset shape,
+  builder transparency, wrapper-vs-template equality)
+  and `test_v25_docs` (doc-presence + anchor-section
+  sanity).
+
+Walkthroughs:
+[`docs/USER_MANUAL.md`](docs/USER_MANUAL.md) — the
+artist reference,
+[`docs/ARTIST_QUICKSTART.md`](docs/ARTIST_QUICKSTART.md) —
+the 12-step quickstart,
+[`docs/TD_GUIDE.md`](docs/TD_GUIDE.md) — the TD guide,
+[`docs/ROADMAP.md`](docs/ROADMAP.md) — the forward-looking
+scope.
+
 ### T. Production QA & Packaging (v2.4)
 
 v2.4 turns the v2.3 codebase into something an artist can
