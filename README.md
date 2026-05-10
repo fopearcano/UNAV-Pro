@@ -189,6 +189,71 @@ the dataset registry's `<entry.name>:` namespace layers on top.
 Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
 
+### W. Project Workspaces & Scene Organization (v3.1)
+
+v3.1 is the **collaborative project structure** milestone.
+Goal: make UNAV usable inside real production projects
+with organised scenes, reusable voyage assets, and team-
+friendly structure. **Not** rendering. **Not** new
+authoring surfaces. v3.0 runtime preserved byte-identical;
+v3.1 adds the scaffolding artists need to organise multi-
+mission projects.
+
+What's new:
+
+* **Workspace system.** New `unav_pro/project/workspace.py`
+  builds a standard directory tree
+  (`datasets/`, `cache/`, `missions/`, `routes/`,
+  `exports/`, `overlays/`, `timelines/`, `notes/`) with
+  a `project_manifest.json` at the root. References
+  inside the manifest are workspace-relative so a
+  workspace stays portable across machines.
+* **Project manifest** (`project_manifest.py`).
+  Declarative schema (`schema_version: 1`) with
+  `DatasetReference` / `MissionReference` /
+  `RouteReference` / `TimelineReference` plus overlay +
+  science-layer settings snapshots. Atomic JSON I/O;
+  loaders fail-closed on newer schema versions.
+* **Standardised scene hierarchy**
+  (`c4d_objects/scene_structure.py`). Canonical
+  `UNAV_Project` root with six children
+  (`UNAV_Navigation`, `UNAV_VisibleSector`,
+  `UNAV_Overlays`, `UNAV_ScienceLayers`,
+  `UNAV_Missions`, `UNAV_Debug`). Pre-v3.1 roots
+  (`UNAV_Starfield`, etc.) auto-migrate when
+  `ensure_project_structure(doc)` runs against a legacy
+  scene.
+* **Mission packs** (`project/mission_packs.py`). JSON
+  bundle format for sharing missions across projects.
+  `import_pack` is duplicate-safe with three collision
+  strategies: `skip`, `replace`, `rename`.
+* **Notes system** (`project/notes.py`). Project /
+  mission / dataset notes stored as plain markdown for
+  diff-friendliness. Atomic writes; idempotent deletes.
+* **Project panel facade** (`project/panel_actions.py`).
+  Pure-Python wrappers the dialog's *Project* panel
+  calls (Create / Open / Save / Summary / Open Folder /
+  Notes). Fully unit-tested without any UI primitives.
+* **Release artefacts** — `RELEASE_NOTES_v3.1.md`,
+  CHANGELOG entry; the dialog status line shows the new
+  version + codename on every open. Packaging script
+  ships four new docs + v3.1 release notes.
+* **Tests** — `test_v31_project_manifest`,
+  `test_v31_workspace`, `test_v31_scene_structure`,
+  `test_v31_mission_packs`, `test_v31_notes`,
+  `test_v31_panel_actions`. **137 new tests; 2032
+  Python tests pass.**
+
+Walkthroughs:
+[`docs/V3_1_PROJECT_WORKSPACES.md`](docs/V3_1_PROJECT_WORKSPACES.md)
+— milestone overview;
+[`docs/SCENE_ORGANIZATION.md`](docs/SCENE_ORGANIZATION.md)
+— canonical Cinema 4D hierarchy;
+[`docs/MISSION_ASSET_MANAGEMENT.md`](docs/MISSION_ASSET_MANAGEMENT.md)
+— mission packs;
+[`docs/PROJECT_NOTES_SYSTEM.md`](docs/PROJECT_NOTES_SYSTEM.md)
+— the notes layer.
+
 ### V. Large-Scale Workflow Optimization (v3.0)
 
 v3.0 is the **scalability and streaming** milestone. Goal:

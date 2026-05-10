@@ -4,6 +4,74 @@ All notable changes to UNAV Pro are tracked here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [3.1.0] — Project Workspaces & Scene Organization
+
+Collaborative project structure milestone. Goal: make
+UNAV usable inside real production projects with
+organised scenes, reusable voyage assets, and team-
+friendly structure. **Not** rendering. **Not** new
+authoring surfaces. The v3.0 runtime surface is
+preserved byte-identical; v3.1 adds the scaffolding
+artists need to organise multi-mission projects.
+
+### Added
+
+* `unav_pro/project/` — new package with the workspace
+  layer:
+  * `project_manifest.py` — `ProjectManifest` schema
+    (`schema_version: 1`) + references for datasets,
+    missions, routes, timelines, overlay / science
+    settings.
+  * `workspace.py` — `Workspace` facade,
+    `create_workspace`, `open_workspace`, eight-subdir
+    layout (`datasets/`, `cache/`, `missions/`,
+    `routes/`, `exports/`, `overlays/`, `timelines/`,
+    `notes/`).
+  * `notes.py` — markdown-based project / mission /
+    dataset notes.
+  * `mission_packs.py` — `MissionPack` bundle format +
+    `import_pack` with collision strategies (`skip` /
+    `replace` / `rename`).
+  * `panel_actions.py` — pure facade for the dialog's
+    Project panel.
+* `unav_pro/c4d_objects/scene_structure.py` — canonical
+  `UNAV_Project` hierarchy (six children); pure
+  planning helpers + c4d-bound builders. Migrates legacy
+  roots (`UNAV_Starfield`, etc.) automatically.
+* New docs:
+  `docs/V3_1_PROJECT_WORKSPACES.md`,
+  `docs/SCENE_ORGANIZATION.md`,
+  `docs/MISSION_ASSET_MANAGEMENT.md`,
+  `docs/PROJECT_NOTES_SYSTEM.md`.
+* `RELEASE_NOTES_v3.1.md`.
+* New tests:
+  `test_v31_project_manifest`,
+  `test_v31_workspace`,
+  `test_v31_scene_structure`,
+  `test_v31_mission_packs`,
+  `test_v31_notes`,
+  `test_v31_panel_actions`. **137 new tests.**
+
+### Changed
+
+* `scripts/package_plugin.py` ships the four new docs
+  + the v3.1 release notes; `REQUIRED_FILES` updated.
+* `unav_pro/version.py::PLUGIN_VERSION` 3.0.0 →
+  3.1.0; codename *Project Workspaces & Scene
+  Organization*.
+
+### Unchanged
+
+* Every v0.1 → v3.0 feature surface is preserved.
+* Mission JSON, Route JSON, Camera Path JSON, Export
+  Manifest, DB schema, binary format are byte-identical
+  to v3.0. The new `ProjectManifest` schema is
+  additive.
+* Runtime stays stdlib-only. No threading; no IPC;
+  no rendering.
+
+---
+
 ## [3.0.0] — Large-Scale Workflow Optimization
 
 Scalability + streaming milestone. Goal: handle very
