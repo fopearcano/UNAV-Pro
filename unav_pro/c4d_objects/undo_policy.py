@@ -110,6 +110,13 @@ OP_CLEAR_TIMELINE: str = "clear_timeline"
 OP_ENSURE_PROJECT_HIERARCHY: str = "ensure_project_hierarchy"
 OP_CLEANUP_LEGACY_ROOTS: str = "cleanup_legacy_roots"
 
+#: v3.6 cinematic camera-rig operations.
+OP_BUILD_CAMERA_RIG: str = "build_camera_rig"
+OP_REMOVE_CAMERA_RIG: str = "remove_camera_rig"
+OP_ENSURE_CAMERA_RIGS_ROOT: str = "ensure_camera_rigs_root"
+OP_APPLY_FRAMING_PRESET: str = "apply_framing_preset"
+OP_APPLY_ROUTE_BEAUTIFY: str = "apply_route_beautify"
+
 
 #: Map of operation → expected undo types. Tests assert
 #: the table includes every operation the dialog calls;
@@ -130,6 +137,11 @@ UNDO_POLICY: Dict[str, Tuple[str, ...]] = {
     OP_CLEAR_TIMELINE: (UNDO_CHANGE,),
     OP_ENSURE_PROJECT_HIERARCHY: (UNDO_NEW, UNDO_BITS),
     OP_CLEANUP_LEGACY_ROOTS: (UNDO_DELETE, UNDO_BITS),
+    OP_BUILD_CAMERA_RIG: (UNDO_NEW, UNDO_DELETE),
+    OP_REMOVE_CAMERA_RIG: (UNDO_DELETE,),
+    OP_ENSURE_CAMERA_RIGS_ROOT: (UNDO_NEW,),
+    OP_APPLY_FRAMING_PRESET: (UNDO_CHANGE,),
+    OP_APPLY_ROUTE_BEAUTIFY: (UNDO_CHANGE, UNDO_NEW),
 }
 
 

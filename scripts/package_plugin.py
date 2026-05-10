@@ -62,6 +62,7 @@ PACKAGE_INCLUDE: tuple = (
     "RELEASE_NOTES_v3.4_INTERNAL_BETA.md",
     "RELEASE_NOTES_v3.45.md",
     "RELEASE_NOTES_v3.5_PUBLIC_ALPHA.md",
+    "RELEASE_NOTES_v3.6.md",
     "samples/minimal_unav_demo",
     "samples/internal_beta_demo",
 )
@@ -107,6 +108,10 @@ PACKAGE_DOCS: tuple = (
     "docs/ISSUE_REPORTING.md",
     "docs/FIRST_RUN_GUIDE.md",
     "docs/DATA_SOURCE_ATTRIBUTION.md",
+    "docs/V3_6_PROCEDURAL_CINEMATIC_HELPERS.md",
+    "docs/CAMERA_RIGS.md",
+    "docs/CINEMATIC_FRAMING.md",
+    "docs/ROUTE_BEAUTIFICATION.md",
 )
 
 #: Path-name parts that exclude any directory or file
@@ -173,12 +178,15 @@ REQUIRED_FILES: tuple = (
     "RELEASE_NOTES_v3.4_INTERNAL_BETA.md",
     "RELEASE_NOTES_v3.45.md",
     "RELEASE_NOTES_v3.5_PUBLIC_ALPHA.md",
+    "RELEASE_NOTES_v3.6.md",
     "docs/INSTALL_C4D_2023_PLUS.md",
     "docs/QUICK_START.md",
     "docs/PUBLIC_ALPHA_TESTING_GUIDE.md",
     "docs/ISSUE_REPORTING.md",
     "docs/FIRST_RUN_GUIDE.md",
     "docs/DATA_SOURCE_ATTRIBUTION.md",
+    "docs/V3_6_PROCEDURAL_CINEMATIC_HELPERS.md",
+    "docs/CAMERA_RIGS.md",
     "docs/USER_MANUAL.md",
     "docs/ARTIST_QUICKSTART.md",
     "docs/TD_GUIDE.md",

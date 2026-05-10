@@ -212,6 +212,69 @@ the dataset registry's `<entry.name>:` namespace layers on top.
 Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
 
+### CC. Procedural Cinematic Helpers (v3.6)
+
+v3.6 adds **camera choreography, shot planning, and
+artistic voyage creation** helpers on top of the
+v1.4 voyage / v1.8 timeline / v3.45 native-
+integration stack. **Not** rendering. **Not**
+physics. **Not** randomness without a seed. v3.5
+runtime preserved byte-for-byte.
+
+What's new:
+
+* **Cinematic framing**
+  (`unav_pro/cinematic/framing.py`). Five framing
+  presets (close / medium / wide / extreme-wide /
+  extreme-scale), framing-distance trig,
+  ``compose_look_at_pose`` for one-call pose
+  building, slerp-friendly ``blend_look_at`` for
+  smooth orientation transitions.
+* **Camera motion generators**
+  (`unav_pro/cinematic/motion.py`). Drift / orbit
+  / flyby / approach-depart sample tracks + six
+  classic easing presets. **Deterministic** —
+  drift takes an explicit ``seed``; same
+  parameters always produce the same samples.
+* **Route beautification**
+  (`unav_pro/cinematic/route_beautify.py`). Chaikin
+  corner cutting + Gaussian-window smoothing + a
+  sharp-angle detector. The original mission /
+  route data is **never mutated**.
+* **Camera rigs**
+  (`unav_pro/c4d_objects/camera_rigs.py`). Four
+  kinds (orbit / target-follow / flyby /
+  locked-target) under ``UNAV_CameraRigs``.
+  Idempotent: same identity key replaces in
+  place.
+* **Cinematic panel facade**
+  (`unav_pro/ui/cinematic_panel.py`). Pure-Python
+  wrappers for the dialog's *Cinematic* panel
+  (auto-frame, create rig, apply smoothing, motion
+  preview, drift toggle, framing-preset picker).
+* **Undo policy extension** — five new cinematic
+  ops in v3.45's ``UNDO_POLICY``.
+* **Release artefacts** —
+  `RELEASE_NOTES_v3.6.md`, CHANGELOG entry; the
+  dialog status line shows the new version +
+  codename on every open. Packaging script ships
+  four new docs + v3.6 release notes.
+* **Tests** — `test_v36_framing`,
+  `test_v36_motion`, `test_v36_route_beautify`,
+  `test_v36_camera_rigs`,
+  `test_v36_cinematic_panel`. **135 new tests;
+  2725 Python tests pass.**
+
+Walkthroughs:
+[`docs/V3_6_PROCEDURAL_CINEMATIC_HELPERS.md`](docs/V3_6_PROCEDURAL_CINEMATIC_HELPERS.md)
+— milestone overview;
+[`docs/CINEMATIC_FRAMING.md`](docs/CINEMATIC_FRAMING.md)
+— framing presets + auto-look-at math;
+[`docs/CAMERA_RIGS.md`](docs/CAMERA_RIGS.md)
+— rig hierarchy + undo coverage;
+[`docs/ROUTE_BEAUTIFICATION.md`](docs/ROUTE_BEAUTIFICATION.md)
+— smoothing algorithms.
+
 ### BB. Public Alpha (v3.5)
 
 v3.5 is the **public alpha** release. **Not** a

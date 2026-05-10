@@ -4,6 +4,69 @@ All notable changes to UNAV Pro are tracked here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [3.6.0] — Procedural Cinematic Helpers
+
+Cinematic-helpers milestone. Goal: make UNAV more
+useful for cinematic navigation, shot planning, and
+artistic voyage creation. **Not** rendering. **Not**
+physics. v3.5 runtime preserved byte-for-byte.
+
+### Added
+
+* `unav_pro/cinematic/` (new package):
+  * `framing.py` — five framing presets, framing-
+    distance trig, ``compose_look_at_pose``,
+    slerp ``blend_look_at``.
+  * `motion.py` — drift / orbit / flyby /
+    approach-depart sample generators + six
+    easing presets. Deterministic.
+  * `route_beautify.py` — Chaikin + Gaussian
+    smoothing + sharp-angle detector. Preserves
+    input.
+* `unav_pro/c4d_objects/camera_rigs.py` — four
+  rig kinds (orbit / target-follow / flyby /
+  locked-target) under ``UNAV_CameraRigs``.
+  Idempotent.
+* `unav_pro/ui/cinematic_panel.py` — pure-Python
+  facade for the dialog's Cinematic panel.
+* New docs:
+  `docs/V3_6_PROCEDURAL_CINEMATIC_HELPERS.md`,
+  `docs/CAMERA_RIGS.md`,
+  `docs/CINEMATIC_FRAMING.md`,
+  `docs/ROUTE_BEAUTIFICATION.md`.
+* `RELEASE_NOTES_v3.6.md`.
+* New tests: `test_v36_framing`,
+  `test_v36_motion`,
+  `test_v36_route_beautify`,
+  `test_v36_camera_rigs`,
+  `test_v36_cinematic_panel`. **135 new tests.**
+
+### Changed
+
+* `unav_pro/c4d_objects/undo_policy.py` —
+  ``UNDO_POLICY`` gains five cinematic
+  operations: `build_camera_rig`,
+  `remove_camera_rig`,
+  `ensure_camera_rigs_root`,
+  `apply_framing_preset`,
+  `apply_route_beautify`.
+* `scripts/package_plugin.py` ships the four new
+  docs + the v3.6 release notes.
+* `unav_pro/version.py::PLUGIN_VERSION` 3.5.0 →
+  3.6.0; codename *Procedural Cinematic Helpers*.
+
+### Unchanged
+
+* Every v0.1 → v3.5 feature surface is preserved.
+* Mission JSON, Route JSON, Camera Path JSON,
+  Export Manifest, DB schema, binary format,
+  provenance JSON, presentation JSON, issue-
+  report bundle byte-identical to v3.5.
+* Runtime stays stdlib-only. No threading; no IPC;
+  no rendering.
+
+---
+
 ## [3.5.0] — Public Alpha
 
 Public-alpha release. **Not** a feature phase. **Not**
