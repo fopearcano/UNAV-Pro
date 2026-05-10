@@ -189,6 +189,71 @@ the dataset registry's `<entry.name>:` namespace layers on top.
 Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
 
+### X. Data Integrity & Provenance (v3.2)
+
+v3.2 is the **production validation and scientific data
+integrity** milestone. Goal: make UNAV trustworthy when
+handling real astronomical data, coordinates, epochs,
+metadata, and exports. **Not** rendering. **Not** new
+authoring surfaces. v3.1 runtime preserved byte-identical;
+v3.2 adds provenance + validation scaffolding so every
+catalog row, every inspector view, and every export
+package becomes self-describing.
+
+What's new:
+
+* **Data provenance** (`unav_pro/data/provenance.py`).
+  `ProvenanceRecord` captures catalog source, query
+  parameters, fetch timestamp, connector + version,
+  normalisation version, original field names,
+  coordinate system, units, and known limitations.
+  Connectors stamp records into
+  `metadata_json["provenance"]`; the inspector reads
+  them; the export manifest aggregates them.
+* **Validation reports** (`unav_pro/data/validation_report.py`).
+  Eight per-row probes (missing coordinates, invalid
+  parallax, missing epoch, invalid redshift,
+  malformed metadata, suspicious distance,
+  unsupported units, no provenance) + duplicate-uid
+  detection. Stable issue codes; severity bands
+  (info / warn / error); Markdown + JSON renderers.
+* **Dataset audit CLI** (`tools/audit_dataset.py`).
+  Runs the validator against a JSONL catalog and
+  emits a Markdown report (plus optional JSON
+  sidecar). Exit codes: 0 clean / warnings only,
+  1 errors, 2 missing input.
+* **Metadata inspector upgrade**
+  (`unav_pro/knowledge/provenance_view.py`).
+  `build_provenance_view(obj)` returns the
+  provenance + validation block the inspector
+  renders alongside the v1.3 nine-section summary.
+* **Export package self-description.**
+  `PackageManifest` gains four fields:
+  `provenance_summary`, `audit_summary`,
+  `coordinate_conventions`, `known_limitations`.
+  The on-disk `manifest.json` becomes a
+  scientifically self-describing artefact a
+  consumer can read without UNAV.
+* **Release artefacts** — `RELEASE_NOTES_v3.2.md`,
+  CHANGELOG entry; the dialog status line shows the
+  new version + codename on every open. Packaging
+  script ships four new docs + v3.2 release notes.
+* **Tests** — `test_v32_provenance`,
+  `test_v32_validation`, `test_v32_audit_cli`,
+  `test_v32_export_integration`,
+  `test_v32_inspector_view`. **93 new tests; 2125
+  Python tests pass.**
+
+Walkthroughs:
+[`docs/V3_2_DATA_INTEGRITY.md`](docs/V3_2_DATA_INTEGRITY.md)
+— milestone overview;
+[`docs/DATA_PROVENANCE.md`](docs/DATA_PROVENANCE.md) —
+provenance record + connector usage;
+[`docs/DATA_VALIDATION_REPORTS.md`](docs/DATA_VALIDATION_REPORTS.md)
+— validation probes + audit CLI;
+[`docs/SCIENTIFIC_LIMITATIONS.md`](docs/SCIENTIFIC_LIMITATIONS.md)
+— the canonical caveats UNAV embeds in every package.
+
 ### W. Project Workspaces & Scene Organization (v3.1)
 
 v3.1 is the **collaborative project structure** milestone.

@@ -73,6 +73,23 @@ class PackageManifest:
     in force at export, and a manifest of every asset
     written. Tests assert the round-trip; the package
     builder writes ``manifest.json`` from this struct.
+
+    v3.2 adds four self-describing fields:
+
+    * ``provenance_summary`` — aggregate of distinct
+      sources / connectors / coordinate systems across
+      the active datasets.
+    * ``audit_summary`` — counts-only summary of the
+      most recent dataset audit (rows total / issues /
+      by-code / by-severity).
+    * ``coordinate_conventions`` — free-form string
+      describing the science-side coordinate system the
+      datasets live in (separate from
+      ``coordinate_convention``, which describes the
+      *export*'s C4D-world convention).
+    * ``known_limitations`` — list of caveats embedded
+      so the consumer of the package knows what they
+      are looking at.
     """
 
     manifest_version: int = PACKAGE_MANIFEST_VERSION
@@ -91,8 +108,14 @@ class PackageManifest:
     active_datasets: List[str] = field(default_factory=list)
     included_assets: Dict[str, List[str]] = field(default_factory=dict)
 
+    # v3.2 self-describing fields.
+    provenance_summary: Optional[Dict[str, Any]] = None
+    audit_summary: Optional[Dict[str, Any]] = None
+    coordinate_conventions: str = ""
+    known_limitations: List[str] = field(default_factory=list)
+
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        out: Dict[str, Any] = {
             "manifest_version": int(self.manifest_version),
             "exported_at_iso": self.exported_at_iso,
             "plugin_version": self.plugin_version,
@@ -105,6 +128,15 @@ class PackageManifest:
                 k: list(v) for k, v in self.included_assets.items()
             },
         }
+        if self.provenance_summary is not None:
+            out["provenance_summary"] = dict(self.provenance_summary)
+        if self.audit_summary is not None:
+            out["audit_summary"] = dict(self.audit_summary)
+        if self.coordinate_conventions:
+            out["coordinate_conventions"] = self.coordinate_conventions
+        if self.known_limitations:
+            out["known_limitations"] = list(self.known_limitations)
+        return out
 
     def to_json(self, *, indent: int = 2) -> str:
         return json.dumps(self.to_dict(), sort_keys=True, indent=indent)
@@ -112,6 +144,8 @@ class PackageManifest:
     @classmethod
     def from_dict(cls, d: Optional[Dict[str, Any]]) -> "PackageManifest":
         d = d or {}
+        prov = d.get("provenance_summary")
+        audit = d.get("audit_summary")
         return cls(
             manifest_version=int(d.get("manifest_version") or PACKAGE_MANIFEST_VERSION),
             exported_at_iso=str(d.get("exported_at_iso") or _now_iso()),
@@ -129,6 +163,16 @@ class PackageManifest:
                 str(k): [str(v) for v in (vs or [])]
                 for k, vs in (d.get("included_assets") or {}).items()
             },
+            provenance_summary=(
+                dict(prov) if isinstance(prov, dict) else None
+            ),
+            audit_summary=(
+                dict(audit) if isinstance(audit, dict) else None
+            ),
+            coordinate_conventions=str(d.get("coordinate_conventions") or ""),
+            known_limitations=[
+                str(x) for x in (d.get("known_limitations") or []) if str(x)
+            ],
         )
 
 

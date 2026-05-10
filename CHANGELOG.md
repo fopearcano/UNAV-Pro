@@ -4,6 +4,76 @@ All notable changes to UNAV Pro are tracked here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [3.2.0] — Data Integrity & Provenance
+
+Production validation and scientific data integrity
+milestone. Goal: make UNAV trustworthy when handling
+real astronomical data, coordinates, epochs, metadata,
+and exports. **Not** rendering. **Not** new authoring
+surfaces. v3.1 runtime preserved byte-identical; v3.2
+adds provenance + validation scaffolding underneath.
+
+### Added
+
+* `unav_pro/data/provenance.py` — `ProvenanceRecord`
+  + `ProvenanceSummary`, `attach_provenance`,
+  `read_provenance`, `summarise_provenance`,
+  `build_record`. Records live in
+  `metadata_json["provenance"]`.
+* `unav_pro/data/validation_report.py` —
+  `ValidationReport`, `ValidationIssue`,
+  `validate_objects`. Eight per-row probes
+  (missing coordinates, invalid parallax, missing
+  epoch, invalid redshift, malformed metadata,
+  suspicious distance, unsupported units, no
+  provenance) plus duplicate-uid detection.
+  Markdown / JSON renderers; compact
+  `export_summary()` for manifest embedding.
+* `unav_pro/knowledge/provenance_view.py` —
+  `build_provenance_view(obj)` for the metadata
+  inspector.
+* `tools/audit_dataset.py` — CLI that runs the
+  audit against a JSONL catalog. Markdown report
+  by default; optional JSON sidecar; non-zero
+  exit on errors.
+* New docs:
+  `docs/V3_2_DATA_INTEGRITY.md`,
+  `docs/DATA_PROVENANCE.md`,
+  `docs/DATA_VALIDATION_REPORTS.md`,
+  `docs/SCIENTIFIC_LIMITATIONS.md`.
+* `RELEASE_NOTES_v3.2.md`.
+* New tests: `test_v32_provenance`,
+  `test_v32_validation`, `test_v32_audit_cli`,
+  `test_v32_export_integration`,
+  `test_v32_inspector_view`. **93 new tests.**
+
+### Changed
+
+* `PackageManifest` (export package) gains four
+  self-describing fields: `provenance_summary`,
+  `audit_summary`, `coordinate_conventions`,
+  `known_limitations`. Legacy v3.1 / v2.3
+  manifests load without any of these fields.
+* `unav_pro/data/__init__.py` re-exports the v3.2
+  provenance + validation API.
+* `scripts/package_plugin.py` ships the four new
+  docs + the v3.2 release notes;
+  `REQUIRED_FILES` updated.
+* `unav_pro/version.py::PLUGIN_VERSION` 3.1.0 →
+  3.2.0; codename *Data Integrity & Provenance*.
+
+### Unchanged
+
+* Every v0.1 → v3.1 feature surface is preserved.
+* Mission JSON, Route JSON, Camera Path JSON, DB
+  schema, binary format are byte-identical to v3.1.
+  The new `provenance` key inside `metadata_json` is
+  additive and ignored by older readers.
+* Runtime stays stdlib-only. No threading; no IPC;
+  no rendering.
+
+---
+
 ## [3.1.0] — Project Workspaces & Scene Organization
 
 Collaborative project structure milestone. Goal: make

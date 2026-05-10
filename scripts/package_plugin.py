@@ -55,6 +55,7 @@ PACKAGE_INCLUDE: tuple = (
     "RELEASE_NOTES_v2.5.md",
     "RELEASE_NOTES_v3.0.md",
     "RELEASE_NOTES_v3.1.md",
+    "RELEASE_NOTES_v3.2.md",
     "samples/minimal_unav_demo",
 )
 
@@ -81,6 +82,10 @@ PACKAGE_DOCS: tuple = (
     "docs/SCENE_ORGANIZATION.md",
     "docs/MISSION_ASSET_MANAGEMENT.md",
     "docs/PROJECT_NOTES_SYSTEM.md",
+    "docs/V3_2_DATA_INTEGRITY.md",
+    "docs/DATA_PROVENANCE.md",
+    "docs/DATA_VALIDATION_REPORTS.md",
+    "docs/SCIENTIFIC_LIMITATIONS.md",
 )
 
 #: Path-name parts that exclude any directory or file
@@ -138,6 +143,7 @@ REQUIRED_FILES: tuple = (
     "RELEASE_NOTES_v2.5.md",
     "RELEASE_NOTES_v3.0.md",
     "RELEASE_NOTES_v3.1.md",
+    "RELEASE_NOTES_v3.2.md",
     "docs/INSTALL_C4D_2023_PLUS.md",
     "docs/QUICK_START.md",
     "docs/USER_MANUAL.md",
@@ -148,6 +154,8 @@ REQUIRED_FILES: tuple = (
     "docs/LARGE_DATA_WORKFLOWS.md",
     "docs/V3_1_PROJECT_WORKSPACES.md",
     "docs/SCENE_ORGANIZATION.md",
+    "docs/V3_2_DATA_INTEGRITY.md",
+    "docs/SCIENTIFIC_LIMITATIONS.md",
     "samples/minimal_unav_demo/README.md",
 )
 
