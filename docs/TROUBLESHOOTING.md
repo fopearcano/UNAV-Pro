@@ -207,7 +207,36 @@ flushed periodically.
 
 ---
 
-## 11. None of the above
+## 11. v3.4 reset tools
+
+When the UI gets confused (stuck selection, stale
+workspace pointer, leftover legacy nulls in the scene),
+the v3.4 *Diagnostics → Reset* group recovers without a
+restart:
+
+* **Reset UI State** — clears the dialog's in-memory
+  selection / scroll / search state. Touches no files.
+* **Reset Workspace State** — drops the active
+  workspace pointer. The workspace tree on disk is
+  **never** touched.
+* **Clear Generated UNAV Objects** — removes legacy
+  scene roots (`UNAV_Starfield`, `UNAV_DebugCone`,
+  scratch `UNAV_*` nulls). The canonical `UNAV_Project`
+  root is preserved.
+* **Clear Cache References** — drops the chunk-reuse
+  cache, the query timing log, the metadata-lookup
+  default, and the in-memory dataset-registry pointer.
+  No on-disk data is removed.
+* **Rebuild Scene Hierarchy** — recreates the v3.1
+  canonical hierarchy (`UNAV_Project` + six children).
+  Migrates legacy roots in place.
+
+Each reset is **idempotent** — running it twice in a row
+clears once and is a no-op the second time. The on-disk
+artefacts (catalogs, workspaces, missions, presentations)
+are sacred and never touched.
+
+## 12. None of the above
 
 1. Run ``python scripts/run_tests.py --quiet``.
 2. Run **Diagnostics → Run Health Check**.

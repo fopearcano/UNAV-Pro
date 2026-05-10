@@ -189,6 +189,74 @@ the dataset registry's `<entry.name>:` namespace layers on top.
 Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
 
+### Z. Internal Beta Hardening (v3.4)
+
+v3.4 is the **internal-beta hardening** milestone. Goal:
+prepare UNAV for serious internal testing as a stable
+Cinema 4D plugin. **Not** a feature phase. **Not**
+rendering. **Not** new authoring surfaces. v3.3 runtime
+preserved byte-identical; v3.4 adds release discipline
+and the scaffolding testers need.
+
+What's new:
+
+* **Six new health-check probes**
+  (`unav_pro/core/health_check.py`).
+  `python_runtime` reports Python version;
+  `c4d_host` reports the C4D API + build (or "outside
+  C4D" when run from the CLI / test suite);
+  `workspace`, `active_mission`, `visible_sector`,
+  `presentation` report the live state of the v3.1 /
+  v1.4 / v0.7 / v3.3 surfaces. **14 probes total.**
+* **Safe reset tools** (`unav_pro/core/reset_tools.py`).
+  Five idempotent operations: Reset UI State, Reset
+  Workspace State, Clear Generated UNAV Objects
+  (preserves the canonical `UNAV_Project` root),
+  Clear Cache References (chunk-reuse cache + timing
+  log + metadata-lookup default + dataset-registry
+  pointer), Rebuild Scene Hierarchy (recreates the
+  v3.1 canonical six children + migrates legacy
+  roots). Pure planning helpers; on-disk artefacts
+  never touched.
+* **State-manager helpers**
+  (`current_workspace` / `set_current_workspace` and
+  `current_mission` / `set_current_mission`). The
+  dialog has a single source of truth for "what is
+  active right now."
+* **Internal beta sample workspace**
+  (`samples/internal_beta_demo/`). Self-contained
+  v3.1 workspace with five Gaia rows, three JPL
+  bodies, a three-stop mission, a route, a
+  presentation, and project notes. Walks the
+  beta-checklist procedure end-to-end.
+* **Test-runner refresh**
+  (`scripts/run_tests.py::TEST_CATEGORIES`). New
+  buckets: `workflow`, `scalability`, `workspace`,
+  `integrity`, `presentation`, `beta`. Every v3.x
+  family now lands in a named category.
+* **Internal beta checklist**
+  (`docs/V3_4_INTERNAL_BETA_CHECKLIST.md`). 17
+  numbered sections walking from fresh install
+  through reload + reset tools.
+* **Troubleshooting refresh.** The v3.4 reset-tools
+  section appended.
+* **Release artefacts** —
+  `RELEASE_NOTES_v3.4_INTERNAL_BETA.md`, CHANGELOG
+  entry; the dialog status line shows the new
+  version + codename on every open. Packaging
+  script ships the v3.4 docs + checklist + the new
+  internal-beta sample.
+* **Tests** — `test_v34_reset_tools`,
+  `test_v34_health_check`, `test_v34_beta_demo`,
+  `test_v34_run_tests_categories`. **67 new tests;
+  2344 Python tests pass.**
+
+Walkthroughs:
+[`docs/V3_4_INTERNAL_BETA_CHECKLIST.md`](docs/V3_4_INTERNAL_BETA_CHECKLIST.md)
+— the manual test pass;
+[`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) §11
+— the v3.4 reset-tools section.
+
 ### Y. Presentation & Educational Mode (v3.3)
 
 v3.3 is the **guided-presentation** milestone. Goal:

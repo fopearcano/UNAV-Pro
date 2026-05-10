@@ -4,6 +4,69 @@ All notable changes to UNAV Pro are tracked here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [3.4.0] — Internal Beta Hardening
+
+Internal-beta hardening milestone. Goal: prepare UNAV
+for serious internal testing as a stable Cinema 4D
+plugin. **Not** a feature phase; **not** rendering;
+**not** new authoring surfaces. v3.3 runtime preserved
+byte-identical; v3.4 adds release discipline and the
+scaffolding testers need.
+
+### Added
+
+* `unav_pro/core/reset_tools.py` — five idempotent
+  reset operations (`reset_ui_state`,
+  `reset_workspace_state`,
+  `clear_generated_objects_report`,
+  `clear_cache_references`,
+  `rebuild_hierarchy_report`). Pure planning helpers;
+  on-disk artefacts never touched.
+* Six new health-check probes:
+  `python_runtime`, `c4d_host`, `workspace`,
+  `active_mission`, `visible_sector`, `presentation`.
+  Diagnostics panel now lists 14 probes.
+* `current_workspace` / `set_current_workspace` and
+  `current_mission` / `set_current_mission` accessors
+  on `core/state_manager.py`.
+* `samples/internal_beta_demo/` — self-contained
+  workspace with five Gaia rows, three JPL bodies,
+  a three-stop mission, a route, a presentation,
+  and project notes.
+* New docs:
+  `docs/V3_4_INTERNAL_BETA_CHECKLIST.md` (17-section
+  manual test pass).
+* `RELEASE_NOTES_v3.4_INTERNAL_BETA.md`.
+* New tests: `test_v34_reset_tools`,
+  `test_v34_health_check`,
+  `test_v34_beta_demo`,
+  `test_v34_run_tests_categories`. **67 new tests.**
+
+### Changed
+
+* `scripts/run_tests.py::TEST_CATEGORIES` gains six
+  buckets: `workflow`, `scalability`, `workspace`,
+  `integrity`, `presentation`, `beta`.
+* `scripts/package_plugin.py` ships the v3.4 release
+  notes + checklist + new internal-beta sample
+  workspace.
+* `docs/TROUBLESHOOTING.md` — appended a v3.4 reset-
+  tools section.
+* `unav_pro/version.py::PLUGIN_VERSION` 3.3.0 →
+  3.4.0; codename *Internal Beta Hardening*.
+
+### Unchanged
+
+* Every v0.1 → v3.3 feature surface is preserved.
+* Mission JSON, Route JSON, Camera Path JSON,
+  Export Manifest, DB schema, binary format,
+  provenance JSON, presentation JSON are byte-
+  identical to v3.3.
+* Runtime stays stdlib-only. No threading; no IPC;
+  no rendering.
+
+---
+
 ## [3.3.0] — Presentation & Educational Mode
 
 Guided-presentation milestone. Goal: let UNAV drive

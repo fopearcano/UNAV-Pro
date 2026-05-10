@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "mission_id": "beta-demo-tour",
+  "title": "UNAV Internal Beta Tour",
+  "description": "Three-stop demo through the bundled Gaia and JPL beta samples.",
+  "tags": ["beta", "demo"],
+  "created_at_iso": "2026-05-10T00:00:00Z",
+  "updated_at_iso": "2026-05-10T00:00:00Z",
+  "waypoints": [
+    {
+      "kind": "object",
+      "uid": "gaia:beta:1",
+      "label": "Demo Pleiades A",
+      "catalog_source": "Gaia DR3 (demo)",
+      "object_type": "star",
+      "duration_seconds": 4.0,
+      "tags": ["beta"]
+    },
+    {
+      "kind": "orbital",
+      "uid": "jpl:Earth:2026-01-01T00:00:00",
+      "label": "Earth",
+      "catalog_source": "JPL Horizons (demo)",
+      "object_type": "planet",
+      "epoch_jd": 2461041.5,
+      "duration_seconds": 4.0,
+      "tags": ["beta", "solar-system"]
+    },
+    {
+      "kind": "orbital",
+      "uid": "jpl:Mars:2026-01-01T00:00:00",
+      "label": "Mars",
+      "catalog_source": "JPL Horizons (demo)",
+      "object_type": "planet",
+      "epoch_jd": 2461041.5,
+      "duration_seconds": 4.0,
+      "tags": ["beta", "solar-system"]
+    }
+  ],
+  "scene_annotations": [
+    {
+      "label": "Welcome to UNAV",
+      "x_c4d": 0.0,
+      "y_c4d": 0.0,
+      "z_c4d": 0.0,
+      "notes": "Start of the internal beta tour.",
+      "tags": ["beta", "intro"]
+    }
+  ]
+}

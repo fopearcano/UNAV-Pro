@@ -57,7 +57,9 @@ PACKAGE_INCLUDE: tuple = (
     "RELEASE_NOTES_v3.1.md",
     "RELEASE_NOTES_v3.2.md",
     "RELEASE_NOTES_v3.3.md",
+    "RELEASE_NOTES_v3.4_INTERNAL_BETA.md",
     "samples/minimal_unav_demo",
+    "samples/internal_beta_demo",
 )
 
 #: Top-level docs the package carries. Listed separately so
@@ -91,6 +93,7 @@ PACKAGE_DOCS: tuple = (
     "docs/PRESENTATION_SEQUENCES.md",
     "docs/EDUCATIONAL_WORKFLOWS.md",
     "docs/PRESENTER_NOTES.md",
+    "docs/V3_4_INTERNAL_BETA_CHECKLIST.md",
 )
 
 #: Path-name parts that exclude any directory or file
@@ -150,6 +153,7 @@ REQUIRED_FILES: tuple = (
     "RELEASE_NOTES_v3.1.md",
     "RELEASE_NOTES_v3.2.md",
     "RELEASE_NOTES_v3.3.md",
+    "RELEASE_NOTES_v3.4_INTERNAL_BETA.md",
     "docs/INSTALL_C4D_2023_PLUS.md",
     "docs/QUICK_START.md",
     "docs/USER_MANUAL.md",
@@ -164,7 +168,10 @@ REQUIRED_FILES: tuple = (
     "docs/SCIENTIFIC_LIMITATIONS.md",
     "docs/V3_3_PRESENTATION_MODE.md",
     "docs/EDUCATIONAL_WORKFLOWS.md",
+    "docs/V3_4_INTERNAL_BETA_CHECKLIST.md",
     "samples/minimal_unav_demo/README.md",
+    "samples/internal_beta_demo/README.md",
+    "samples/internal_beta_demo/project_manifest.json",
 )
 
 

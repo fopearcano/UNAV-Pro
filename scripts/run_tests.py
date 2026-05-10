@@ -49,6 +49,12 @@ TEST_CATEGORIES: tuple = (
     ("v18",          "test_v18"),
     ("v19",          "test_v19"),
     ("release",      "test_v24"),
+    ("workflow",     "test_v25"),
+    ("scalability",  "test_v30"),
+    ("workspace",    "test_v31"),
+    ("integrity",    "test_v32"),
+    ("presentation", "test_v33"),
+    ("beta",         "test_v34"),
 )
 
 

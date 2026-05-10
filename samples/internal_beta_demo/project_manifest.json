@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "project_name": "UNAV Internal Beta Demo",
+  "project_description": "Bundled sample workspace for the v3.4 internal beta. Includes Gaia + JPL demo datasets, a three-stop mission, a route, a presentation, and project notes.",
+  "plugin_version": "3.4.0",
+  "created_at_iso": "2026-05-10T00:00:00Z",
+  "updated_at_iso": "2026-05-10T00:00:00Z",
+  "scale_mode": "parsec_to_cm",
+  "datasets": [
+    {
+      "name": "gaia_demo",
+      "path": "datasets/gaia_demo.jsonl",
+      "enabled": true,
+      "namespace": true,
+      "role": "primary",
+      "index_dir": null,
+      "notes": "Five Gaia-style rows with v3.2 provenance stamped."
+    },
+    {
+      "name": "jpl_demo",
+      "path": "datasets/jpl_demo.jsonl",
+      "enabled": true,
+      "namespace": true,
+      "role": "secondary",
+      "index_dir": null,
+      "notes": "Mercury / Earth / Mars at JD 2461041.5."
+    }
+  ],
+  "missions": [
+    {
+      "mission_id": "beta-demo-tour",
+      "path": "missions/demo_tour.json",
+      "title": "UNAV Internal Beta Tour",
+      "tags": ["beta", "demo"],
+      "notes": "Three-stop demo mission used by the beta checklist."
+    }
+  ],
+  "routes": [
+    {
+      "name": "UNAV Demo Route",
+      "path": "routes/demo_route.json",
+      "notes": "Three-stop route variant."
+    }
+  ],
+  "timelines": [],
+  "overlays": {
+    "settings": {
+      "show_distance_rings": true,
+      "show_galactic_plane": true
+    }
+  },
+  "science_layers": {
+    "settings": {}
+  },
+  "metadata": {
+    "release": "3.4-internal-beta"
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "presentation_id": "beta-demo-talk",
+  "title": "UNAV Internal Beta Talk",
+  "description": "Three-step lecture walking through the demo mission.",
+  "presenter_notes": "Welcome the audience. Introduce the demo dataset. Mention this is an internal beta build.",
+  "mission_ref": "beta-demo-tour",
+  "tags": ["beta", "demo"],
+  "created_at_iso": "2026-05-10T00:00:00Z",
+  "updated_at_iso": "2026-05-10T00:00:00Z",
+  "steps": [
+    {
+      "step_id": "step-beta-intro",
+      "title": "Pleiades Star",
+      "narration": "We begin at one of the demo Pleiades stars, ~137 parsec from Earth.",
+      "presenter_notes": "Mention parallax = 1000 / d_pc; emphasise the v3.2 provenance shows the source.",
+      "pause_seconds": 6.0,
+      "waypoint_ref": "gaia:beta:1",
+      "overlay_flags": {"show_distance_rings": true, "show_galactic_plane": true},
+      "visible_annotation_indices": [0],
+      "highlighted_annotation_indices": [0],
+      "tags": ["intro"]
+    },
+    {
+      "step_id": "step-beta-earth",
+      "title": "Earth",
+      "narration": "Now we hop to Earth's barycentric position at the bundled epoch.",
+      "presenter_notes": "Note the JPL row carries an explicit epoch_jd; the v1.2 time navigator picks the snapshot.",
+      "pause_seconds": 5.0,
+      "waypoint_ref": "jpl:Earth:2026-01-01T00:00:00",
+      "epoch_jd": 2461041.5,
+      "overlay_flags": {"show_ecliptic_plane": true, "show_galactic_plane": false},
+      "tags": ["solar-system"]
+    },
+    {
+      "step_id": "step-beta-mars",
+      "title": "Mars",
+      "narration": "And finally Mars, still at the same epoch — note the parallax shift.",
+      "presenter_notes": "Hand control back to the audience for Q&A.",
+      "pause_seconds": 5.0,
+      "waypoint_ref": "jpl:Mars:2026-01-01T00:00:00",
+      "tags": ["solar-system", "outro"]
+    }
+  ]
+}

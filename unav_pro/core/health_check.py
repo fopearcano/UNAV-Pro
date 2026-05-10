@@ -362,12 +362,184 @@ def _probe_export_module() -> HealthCheckEntry:
 
 
 # ---------------------------------------------------------------------------
+# v3.4 internal-beta probes
+# ---------------------------------------------------------------------------
+
+
+def _probe_python_runtime() -> HealthCheckEntry:
+    """Report the Python interpreter UNAV is running under.
+
+    Cinema 4D 2023+ ships Python 3.11; the plugin is
+    written + tested against that. We log the live
+    version so the diagnostics panel shows it, and warn
+    when the runtime is older than 3.10."""
+    import sys
+    ver = ".".join(str(x) for x in sys.version_info[:3])
+    if sys.version_info < (3, 10):
+        return HealthCheckEntry(
+            name="python_runtime",
+            status=STATUS_WARNING,
+            detail=(
+                f"Python {ver}; UNAV expects 3.10+ "
+                "(C4D 2023+ ships 3.11)."
+            ),
+        )
+    return HealthCheckEntry(
+        name="python_runtime",
+        status=STATUS_OK,
+        detail=f"Python {ver}.",
+    )
+
+
+def _probe_c4d_host() -> HealthCheckEntry:
+    """Report the Cinema 4D version when running inside
+    the host. Outside the host (CLI / test suite) the
+    probe reports informationally — that's not a failure."""
+    try:
+        import c4d  # type: ignore
+    except ImportError:
+        return HealthCheckEntry(
+            name="c4d_host",
+            status=STATUS_INFO,
+            detail="not running inside Cinema 4D (CLI / test suite).",
+        )
+    api_version = "?"
+    build_version = "?"
+    try:
+        api_version = str(getattr(c4d, "API_VERSION", "?"))
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        build_version = str(getattr(c4d, "VERSION", "?"))
+    except Exception:  # noqa: BLE001
+        pass
+    return HealthCheckEntry(
+        name="c4d_host",
+        status=STATUS_OK,
+        detail=f"Cinema 4D API={api_version} build={build_version}.",
+    )
+
+
+def _probe_workspace_state() -> HealthCheckEntry:
+    """v3.1 workspace surface: inspect the in-memory
+    workspace facade (when the dialog has loaded one).
+
+    No workspace active ⇒ info, not a failure — many
+    workflows don't require one.
+    """
+    try:
+        from project import Workspace  # noqa: F401
+    except ImportError as exc:
+        return HealthCheckEntry(
+            name="workspace",
+            status=STATUS_ERROR,
+            detail=f"project package not importable: {exc}",
+        )
+    try:
+        from core.state_manager import (  # noqa: F401
+            current_workspace,
+        )
+        ws = current_workspace()
+    except Exception:  # noqa: BLE001 — boundary
+        ws = None
+    if ws is None:
+        return HealthCheckEntry(
+            name="workspace",
+            status=STATUS_INFO,
+            detail="no workspace active.",
+        )
+    try:
+        intact = bool(getattr(ws, "is_intact", lambda: True)())
+    except Exception:  # noqa: BLE001
+        intact = False
+    return HealthCheckEntry(
+        name="workspace",
+        status=STATUS_OK if intact else STATUS_WARNING,
+        detail=(
+            f"workspace at {getattr(ws, 'root', '?')!r} "
+            + ("intact." if intact else "missing one or more subdirectories.")
+        ),
+    )
+
+
+def _probe_active_mission_state() -> HealthCheckEntry:
+    """v1.4 mission surface: report whether a mission is
+    currently active, plus its waypoint count.
+
+    Looks the active mission up via the state-manager
+    facade. No mission active ⇒ info."""
+    try:
+        from core.state_manager import current_mission
+        mission = current_mission()
+    except (ImportError, Exception):  # noqa: BLE001
+        mission = None
+    if mission is None:
+        return HealthCheckEntry(
+            name="active_mission",
+            status=STATUS_INFO,
+            detail="no mission active.",
+        )
+    try:
+        wp_count = len(getattr(mission, "waypoints", ()) or ())
+        title = getattr(mission, "title", "?")
+    except Exception:  # noqa: BLE001
+        wp_count = 0
+        title = "?"
+    return HealthCheckEntry(
+        name="active_mission",
+        status=STATUS_OK,
+        detail=f"mission {title!r} ({wp_count} waypoint(s)).",
+    )
+
+
+def _probe_visible_sector_state() -> HealthCheckEntry:
+    """Report the materialised visible-sector size.
+
+    Walks the active C4D document via the state-manager
+    facade. Outside Cinema 4D ⇒ info; inside C4D with
+    no sector ⇒ info; with a sector ⇒ ok with the count."""
+    try:
+        from core.state_manager import visible_sector_summary
+        line = visible_sector_summary(None)
+    except Exception:  # noqa: BLE001
+        return HealthCheckEntry(
+            name="visible_sector",
+            status=STATUS_INFO,
+            detail="visible-sector summary unavailable outside C4D.",
+        )
+    return HealthCheckEntry(
+        name="visible_sector",
+        status=STATUS_OK,
+        detail=line,
+    )
+
+
+def _probe_presentation_module() -> HealthCheckEntry:
+    """v3.3 presentation stack must be importable."""
+    try:
+        from presentation import PresentationSequence  # noqa: F401
+        return HealthCheckEntry(
+            name="presentation",
+            status=STATUS_OK,
+            detail="presentation package importable.",
+        )
+    except ImportError as exc:
+        return HealthCheckEntry(
+            name="presentation",
+            status=STATUS_ERROR,
+            detail=f"presentation not importable: {exc}",
+        )
+
+
+# ---------------------------------------------------------------------------
 # Top-level entry point
 # ---------------------------------------------------------------------------
 
 
 _PROBES: tuple = (
     _probe_version,
+    _probe_python_runtime,
+    _probe_c4d_host,
     _probe_config_dir,
     _probe_cache_dir,
     _probe_dataset_registry,
@@ -375,6 +547,10 @@ _PROBES: tuple = (
     _probe_db_module,
     _probe_voyage_module,
     _probe_export_module,
+    _probe_workspace_state,
+    _probe_active_mission_state,
+    _probe_visible_sector_state,
+    _probe_presentation_module,
 )
 
 

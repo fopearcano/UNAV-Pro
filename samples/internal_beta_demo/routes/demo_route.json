@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "name": "UNAV Demo Route",
+  "waypoints": [
+    {"kind": "object", "uid": "gaia:beta:1", "label": "Demo Pleiades A"},
+    {"kind": "object", "uid": "gaia:beta:4", "label": "Demo Pleiades D"},
+    {"kind": "object", "uid": "jpl:Earth:2026-01-01T00:00:00", "label": "Earth"}
+  ],
+  "notes": "Three-stop route used by the v3.4 internal beta demo."
+}

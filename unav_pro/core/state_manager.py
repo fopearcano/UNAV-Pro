@@ -140,6 +140,47 @@ def reload_all() -> None:
     set_dataset_registry(None)
     set_default_time_state(None)
     set_default_lookup(None)
+    set_current_workspace(None)
+    set_current_mission(None)
+
+
+# ---------------------------------------------------------------------------
+# v3.4: shared accessors the diagnostics + reset tools read.
+#
+# The dialog populates these from ui/main_dialog.py when the
+# artist opens a workspace or activates a mission. Pure
+# data; the facade itself does no I/O.
+# ---------------------------------------------------------------------------
+
+
+_current_workspace: Optional[object] = None
+_current_mission: Optional[object] = None
+
+
+def current_workspace():
+    """Return the active v3.1 ``Workspace`` instance, or
+    ``None`` when no workspace is loaded."""
+    return _current_workspace
+
+
+def set_current_workspace(workspace) -> None:
+    """Replace the active workspace. The dialog calls this
+    after ``project.open_workspace`` succeeds."""
+    global _current_workspace
+    _current_workspace = workspace
+
+
+def current_mission():
+    """Return the active v1.4 ``Mission`` instance, or
+    ``None``."""
+    return _current_mission
+
+
+def set_current_mission(mission) -> None:
+    """Replace the active mission. The dialog calls this
+    when the artist clicks 'Activate' on a mission."""
+    global _current_mission
+    _current_mission = mission
 
 
 # ---------------------------------------------------------------------------

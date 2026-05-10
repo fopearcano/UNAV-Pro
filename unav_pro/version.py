@@ -20,11 +20,11 @@ from typing import Tuple
 #: Plugin version string. Stamped into the export manifest,
 #: surfaced in the dialog's title bar / status line, and
 #: read by the packaging script when naming the zip.
-PLUGIN_VERSION: str = "3.3.0"
+PLUGIN_VERSION: str = "3.4.0"
 
-#: Stable codename for the v3.3 milestone — surfaced in
+#: Stable codename for the v3.4 milestone — surfaced in
 #: release notes + the dialog's "About" log line.
-PLUGIN_CODENAME: str = "Presentation & Educational Mode"
+PLUGIN_CODENAME: str = "Internal Beta Hardening"
 
 #: Minimum Cinema 4D API the plugin supports. The
 #: ``unav_plugin.pyp`` entry point also enforces this; the
