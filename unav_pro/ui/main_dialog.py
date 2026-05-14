@@ -96,6 +96,13 @@ _ID_BTN_TIME_SYNC = 9506
 _ID_NUM_TIME_STEP = 9507
 _ID_TIME_STATUS = 9508
 
+# UI sizing fix: outer vertical scroll wrapper for the main
+# dialog body. The ScrollGroupBegin keeps every section
+# reachable when the window is shorter than the natural
+# layout height. See docs/UI_LAYOUT_NOTES.md.
+_ID_GROUP_SCROLL_ROOT = 9800
+_ID_GROUP_SCROLL_INNER = 9801
+
 # v0.6 — UX layer: search, bookmarks, navigation controller.
 _ID_GROUP_TABS = 10000
 _ID_TAB_SEARCH = 10100
@@ -225,6 +232,37 @@ if _C4D_AVAILABLE:
 
         def CreateLayout(self) -> bool:
             self.SetTitle(self.TITLE)
+
+            # ----- UI sizing fix -----
+            # The dialog stacks many sections vertically (Workflow,
+            # Display, Safety, Sync, Render Mode, Time Navigator,
+            # Actions, Status Log, Route Planner, Metadata
+            # Inspector, plus a tab group containing Search /
+            # Bookmarks / Navigation / Missions / Overlays). On
+            # laptop-height screens (< ~900 px) the natural layout
+            # height exceeds the screen, hiding bottom controls.
+            # Wrapping every section in an outer SCROLLGROUP_VERT
+            # lets the user scroll when the window is shorter than
+            # the content, while still letting the window resize
+            # vertically. See docs/UI_LAYOUT_NOTES.md.
+            try:
+                self.ScrollGroupBegin(
+                    _ID_GROUP_SCROLL_ROOT,
+                    c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT,
+                    c4d.SCROLLGROUP_VERT | c4d.SCROLLGROUP_AUTOVERT,
+                )
+                self.GroupBegin(
+                    _ID_GROUP_SCROLL_INNER,
+                    c4d.BFH_SCALEFIT | c4d.BFV_TOP,
+                    cols=1, rows=1,
+                )
+                self.GroupBorderSpace(4, 4, 4, 4)
+                self._scroll_wrapper_active = True
+            except Exception:  # noqa: BLE001
+                # Older / mock C4D builds without ScrollGroupBegin
+                # — degrade to the legacy flat layout rather than
+                # blocking the plugin from loading.
+                self._scroll_wrapper_active = False
 
             # Workflow hint — read-only strip at the top guiding the
             # user through the five v0.2 sector-streaming steps.
@@ -481,6 +519,13 @@ if _C4D_AVAILABLE:
                 self.GroupEnd()
             except Exception:  # noqa: BLE001 — UI boundary
                 _log.exception("v0.6 tab group failed to build")
+
+            # ----- UI sizing fix (close wrappers) -----
+            # Match the ScrollGroupBegin / GroupBegin opened at the
+            # top of CreateLayout.
+            if getattr(self, "_scroll_wrapper_active", False):
+                self.GroupEnd()  # _ID_GROUP_SCROLL_INNER
+                self.GroupEnd()  # _ID_GROUP_SCROLL_ROOT (ScrollGroup)
             return True
 
         # The most recent inspection so "Copy Metadata JSON" has
@@ -3023,10 +3068,16 @@ if _C4D_AVAILABLE:
 
             if self._diagnostics_dialog is None:
                 self._diagnostics_dialog = UnavDiagnosticsDialog()
+            # UI sizing fix: bring the diagnostics dialog
+            # under the laptop-class budget. The inner
+            # multi-line edit now declares ``inith=240`` so
+            # the dialog is comfortable at 620×520; bumping
+            # defaulth past that lets the panel grow but
+            # never forces it. See docs/UI_LAYOUT_NOTES.md.
             opened = self._diagnostics_dialog.Open(
                 dlgtype=c4d.DLG_TYPE_ASYNC,
                 pluginid=PLUGIN_ID_DIAGNOSTICS_DIALOG,
-                defaultw=620, defaulth=620,
+                defaultw=620, defaulth=520,
             )
             self._append_log(
                 "Diagnostics: opened." if opened

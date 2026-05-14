@@ -175,10 +175,17 @@ if _C4D_AVAILABLE:
                 cols=1, rows=1, title="Diagnostics",
             )
             self.GroupBorderSpace(8, 8, 8, 8)
+            # UI sizing fix: the multi-line edit declared
+            # ``inith=420`` which forced a ~520+ px panel on
+            # top of the header + buttons rows, overflowing
+            # laptop-class screens. ``inith=240`` plus
+            # ``BFV_SCALEFIT`` lets the widget grow when the
+            # dialog has room and shrinks gracefully when it
+            # doesn't. See docs/UI_LAYOUT_NOTES.md.
             self.AddMultiLineEditText(
                 _ID_PANEL,
                 c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT,
-                inith=420,
+                inith=240,
                 style=c4d.DR_MULTILINE_READONLY | c4d.DR_MULTILINE_MONOSPACED,
             )
             self.GroupEnd()
