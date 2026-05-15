@@ -301,3 +301,94 @@ The MVP shipped here is intentionally narrow: one ring buffer, one
 formatter, one dialog. Every future feature in this list slots in
 behind the existing `gather_environment` / `format_diagnostics`
 interface without touching the plumbing.
+
+---
+
+## 10. Status-log line formatting (fix-log-newline-formatting)
+
+Pre-fix, the dialog's *Status Log* widget kept its state inside
+Cinema 4D's `MultiLineEditText`. Each `_append_log(line)` call
+read the widget back with `GetString`, appended one entry, and
+wrote the result with `SetString`. On platforms where C4D's
+`MultiLineEditText.GetString` does **not** preserve the `\n`
+character through a round-trip (a known cross-platform
+inconsistency), the newline got dropped + consecutive entries
+collapsed into a single line:
+
+```
+[INFO] Loaded dataset[INFO] Created navigator[WARNING] Missing metadata
+```
+
+The fix is in `unav_pro/core/log_format.py` + a rewritten
+`_append_log` in `ui/main_dialog.py`:
+
+* **Python-side buffer.** A `LogBuffer` dataclass holds the
+  rendered lines as a `List[str]`. The widget's `GetString` is
+  never read back; the buffer is the single source of truth.
+* **Per-line storage.** `format_log_entry(message, level=...,
+  timestamp=...)` splits a multi-line message into a list of
+  *physical lines* + prepends `[LEVEL]` / timestamp to each so
+  the buffer always stores one entry per element.
+* **Newline-normalised input.** `\r\n` and `\r` line endings are
+  mapped to `\n` before splitting so a mission JSON hand-edited
+  on Windows + a CLI log streamed in from macOS render the
+  same.
+* **Bounded buffer.** `DEFAULT_LOG_BUFFER_LINES = 500`. Older
+  lines drop FIFO once the cap is hit. The cap fits a ~60 KB
+  text-mode footprint.
+* **Render via `\n`.** `buffer.render()` joins with `\n` + ends
+  with a trailing newline so the widget's cursor sits on a
+  blank line (most C4D builds auto-scroll to that line).
+* **Export render.** `buffer.render_for_export()` returns the
+  joined body without the trailing blank line — used by the
+  v3.5 issue-report bundler + the *Copy Diagnostics* path.
+
+### Helper API
+
+```python
+from core.log_format import LogBuffer, format_log_entry, utc_timestamp
+
+buf = LogBuffer()
+buf.append("Loaded dataset", level="INFO")
+buf.append("Multi-line traceback\nsecond line", level="ERROR")
+print(buf.render())
+# 12:34:56 [INFO] Loaded dataset
+# 12:34:57 [ERROR] Multi-line traceback
+# 12:34:57 [ERROR] second line
+```
+
+`format_log_entry(message, level=..., timestamp=...)` returns the
+list of physical lines without storing anything; useful when
+callers want to feed lines into a different sink.
+
+### Multi-line message handling
+
+A single `append(message)` call where `message` contains
+embedded newlines stores **one buffer element per physical
+line**, each carrying the same level prefix. This keeps a
+traceback's continuation lines readable in the widget instead
+of collapsing them on screen.
+
+### Clear
+
+The dialog's *Clear Log* button clears both the Python buffer
+and the widget. Failing to clear the buffer alone would cause
+the next `_append_log` to re-render the cached lines and undo
+the clear.
+
+### Exported logs
+
+Issue-report bundles (`unav_pro/core/issue_report.py`) take a
+`log_tail` *sequence of strings* — one entry per line. Pass
+`self._log_buffer.snapshot()` (which is already a list) so the
+bundler's line-by-line rendering produces correctly formatted
+output. Files written by the rotating file handler in
+`logger.py` already use `\n` per record + are not affected by
+this bug.
+
+### Tests
+
+`unav_pro/tests/test_log_format.py` covers the pure helpers
+(empty messages, multi-line splitting, timestamp + level
+prefixing, buffer capping, exports without trailing blank
+line, deterministic rendering on repeated appends).

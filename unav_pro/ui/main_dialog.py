@@ -1075,6 +1075,14 @@ if _C4D_AVAILABLE:
                         or mid == _ID_CHK_FULL_OVERRIDE:
                     self._refresh_safety_status()
                 elif mid == _ID_BTN_CLEAR_LOG:
+                    # Clear both the Python-side buffer
+                    # and the widget so the next append
+                    # starts fresh (without the buffer
+                    # clear the next append would re-
+                    # render the cached lines and undo
+                    # the clear).
+                    if hasattr(self, "_log_buffer") and self._log_buffer is not None:
+                        self._log_buffer.clear()
                     self.SetString(_ID_LOG, "")
                 # v0.6 — search / bookmarks / navigation handlers.
                 elif mid == _ID_BTN_SEARCH_GO:
@@ -1210,10 +1218,36 @@ if _C4D_AVAILABLE:
 
         # --- helpers ---------------------------------------------------
 
-        def _append_log(self, line: str) -> None:
-            current = self.GetString(_ID_LOG) or ""
-            new_text = (current + line + "\n") if current else (line + "\n")
-            self.SetString(_ID_LOG, new_text)
+        def _append_log(
+            self, line: str, *, level: str = None,
+        ) -> None:
+            """Append one log entry. Every entry lands on
+            its own line — multi-line messages preserve
+            their internal line breaks.
+
+            The historical (pre-fix) implementation read
+            the widget's contents back via ``GetString``
+            and re-concatenated, which collapsed entries
+            into a single line on platforms where C4D's
+            ``MultiLineEditText.GetString`` drops the
+            ``\\n``. v3.x maintains the buffer Python-side
+            (``self._log_buffer``) + re-renders the widget
+            on every append. See ``core/log_format.py``
+            for the pure helpers + docs/DIAGNOSTICS.md
+            for the contract.
+            """
+            from core.log_format import LogBuffer, utc_timestamp
+            if not hasattr(self, "_log_buffer") or self._log_buffer is None:
+                self._log_buffer = LogBuffer()
+            added = self._log_buffer.append(
+                line, level=level, timestamp=utc_timestamp(),
+            )
+            if added == 0:
+                return
+            try:
+                self.SetString(_ID_LOG, self._log_buffer.render())
+            except Exception:  # noqa: BLE001 — never crash on logging
+                pass
 
         def _read_encoding(self):
             """Snapshot the current dropdown + scale values into a
