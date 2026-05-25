@@ -212,6 +212,59 @@ the dataset registry's `<entry.name>:` namespace layers on top.
 Full walkthrough in
 [`docs/MIXED_DATASET_WORKFLOW.md`](docs/MIXED_DATASET_WORKFLOW.md).
 
+### FF. Integrated External Tools (v3.9)
+
+v3.9 makes the heavy preprocessing tools reachable
+**from inside the plugin** while they run in a
+**separate external Python interpreter** — never in
+Cinema 4D's embedded one. The plugin runtime stays
+stdlib-only. **Not** rendering. **No** IPC. **No**
+heavy dependencies inside C4D.
+
+What's new:
+
+* **Tool registry** (`unav_pro/tools/tool_registry.py`)
+  — pure-data descriptions of nine tools across
+  fetch / processing / export, exposing only the
+  minimal *safe* form fields (RA / Dec / radius /
+  limit / output).
+* **External Python environment**
+  (`unav_pro/tools/python_env.py`) — detects a system
+  Python ≥ 3.10 (skipping the C4D embedded
+  interpreter), validates it with a timeout-bounded
+  `--version` probe, and persists the choice
+  (`external_python_path`).
+* **Subprocess runner**
+  (`unav_pro/tools/tool_runner.py`) — safe command
+  construction, log streaming, structured results,
+  failure classification, safe default limits, no
+  stored credentials, cancellation seam.
+* **External Tools panel**
+  (`unav_pro/ui/tools_panel.py`) — Python Environment
+  / Data Fetch / Processing / Export sections, with a
+  warn-before-long-run guard. Open it from the main
+  dialog's **External Tools…** button.
+* **Dataset Manager integration** — a successful fetch
+  registers its catalog (and attaches an index built
+  in the same run); processing tools attach their
+  index / DB to the matching dataset.
+* **Setup** — `python tools/setup_unav_tools_env.py`
+  bootstraps a venv and prints the interpreter path;
+  `requirements-tools.txt` documents that the bundled
+  tools are stdlib-only.
+* **Tests** — `test_integrated_external_tools`.
+  **52 new tests; 3139 Python tests pass.**
+
+Walkthroughs:
+[`docs/INTEGRATED_EXTERNAL_TOOLS.md`](docs/INTEGRATED_EXTERNAL_TOOLS.md)
+— milestone overview;
+[`docs/TOOLS_PYTHON_ENVIRONMENT.md`](docs/TOOLS_PYTHON_ENVIRONMENT.md)
+— pointing the plugin at an external Python;
+[`docs/DATA_FETCH_UI_WORKFLOW.md`](docs/DATA_FETCH_UI_WORKFLOW.md)
+— the fetch → index → register loop;
+[`docs/REQUIREMENTS_TOOLS.md`](docs/REQUIREMENTS_TOOLS.md)
+— what (if anything) to install.
+
 ### EE. Exhibition & Guided Tour Workflows (v3.8)
 
 v3.8 polishes the v3.3 presentation system for

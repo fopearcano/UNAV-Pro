@@ -24,6 +24,7 @@ event loop.
 
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 try:
@@ -199,6 +200,119 @@ class DatasetManagerController:
             f"Build Index: '{name}' — {index.total_objects} objects "
             f"into {len(index.cells)} cells at {entry.index_path}."
         )
+
+    # --------------------------------------------- external-tool bridge
+    def _entry_for_path(self, path: str) -> Optional["DatasetEntry"]:
+        """Find a registered entry whose catalog/DB path resolves to
+        the same absolute file as ``path``. Used to attach an index /
+        DB produced by a processing tool onto its source dataset."""
+        if not path:
+            return None
+        target = os.path.abspath(os.path.expanduser(path))
+        for e in self.registry.entries:
+            for candidate in (e.path, e.db_path):
+                if candidate and os.path.abspath(
+                    os.path.expanduser(candidate)
+                ) == target:
+                    return e
+        return None
+
+    def register_tool_output(
+        self,
+        spec,
+        result,
+        values: Optional[dict] = None,
+        *,
+        name: Optional[str] = None,
+    ) -> str:
+        """Fold a successful external-tool run into the registry.
+
+        Behaviour depends on what the tool produces:
+
+        * **fetch** tools (``produces_dataset``) register their
+          ``--output`` catalog as a new dataset and attach any
+          ``--build-index`` directory the same run created.
+        * **build_index** (``produces_index`` only) attaches its
+          ``--output`` index directory to the dataset whose catalog
+          matches ``--input``; if that catalog isn't registered yet
+          it's registered first.
+        * **import_db** (``produces_db``) attaches its ``--db`` to the
+          matching dataset (or registers the catalog + DB fresh).
+
+        Tools that produce neither a dataset, index, nor DB (audit /
+        export) return a no-op message. Never raises.
+        """
+        values = dict(values or {})
+        if result is None or not getattr(result, "ok", False):
+            return "Register: tool did not finish successfully; nothing to add."
+        outs = dict(getattr(result, "output_paths", {}) or {})
+
+        try:
+            # --- import_db: attach a SQLite DB ------------------------
+            if getattr(spec, "produces_db", False):
+                db_path = outs.get("--db") or values.get("--db")
+                if not db_path or not os.path.isfile(os.path.expanduser(str(db_path))):
+                    return f"Register: expected DB not found ({db_path})."
+                source = self._entry_for_path(values.get("--input", ""))
+                if source is not None:
+                    source.db_path = os.path.abspath(os.path.expanduser(str(db_path)))
+                    self.registry.rescan(source.name)
+                    self._save_quiet()
+                    return f"Register: DB attached to '{source.name}'."
+                entry = self.registry.add_db(os.path.expanduser(str(db_path)), name=name)
+                self._save_quiet()
+                return f"Register: DB dataset '{entry.name}' registered."
+
+            # --- build_index: attach an index dir --------------------
+            if getattr(spec, "produces_index", False) and not getattr(
+                spec, "produces_dataset", False
+            ):
+                index_dir = outs.get("--output") or values.get("--output")
+                if not index_dir or not os.path.isdir(os.path.expanduser(str(index_dir))):
+                    return f"Register: expected index dir not found ({index_dir})."
+                index_abs = os.path.abspath(os.path.expanduser(str(index_dir)))
+                source = self._entry_for_path(values.get("--input", ""))
+                if source is None:
+                    in_path = values.get("--input", "")
+                    if in_path and os.path.isfile(os.path.expanduser(str(in_path))):
+                        source = self.registry.add_path(
+                            os.path.expanduser(str(in_path)), name=name,
+                        )
+                    else:
+                        return "Register: source catalog for the index is not registered."
+                source.index_path = index_abs
+                self._save_quiet()
+                return f"Register: index attached to '{source.name}'."
+
+            # --- fetch: register a brand-new catalog -----------------
+            if getattr(spec, "produces_dataset", False):
+                out_path = outs.get("--output") or values.get("--output")
+                if not out_path or not os.path.isfile(os.path.expanduser(str(out_path))):
+                    return f"Register: expected catalog not found ({out_path})."
+                out_abs = os.path.abspath(os.path.expanduser(str(out_path)))
+                existing = self._entry_for_path(out_abs)
+                if existing is not None:
+                    self.registry.rescan(existing.name)
+                    entry = existing
+                    verb = "rescanned"
+                else:
+                    entry = self.registry.add_path(out_abs, name=name)
+                    verb = "registered"
+                idx = outs.get("--build-index") or values.get("--build-index")
+                if idx and os.path.isdir(os.path.expanduser(str(idx))):
+                    entry.index_path = os.path.abspath(os.path.expanduser(str(idx)))
+                self._save_quiet()
+                stats = ""
+                if entry.stats is not None:
+                    stats = f" ({entry.stats.object_count} objects)"
+                return f"Register: dataset '{entry.name}' {verb}{stats}."
+        except ValueError as exc:
+            return f"Register: {exc}"
+        except Exception as exc:  # noqa: BLE001 — boundary
+            _log.exception("register_tool_output failed")
+            return f"Register: failed: {exc!r}"
+
+        return "Register: tool produces no registerable dataset."
 
     def load_active(self) -> str:
         """Merge every enabled dataset into a fresh ``MetadataLookup``

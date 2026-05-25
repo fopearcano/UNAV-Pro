@@ -62,6 +62,7 @@ _ID_BTN_SAVE_STATE = 7002
 _ID_BTN_LOAD_STATE = 7003
 _ID_BTN_RESET_PREFS = 7004
 _ID_BTN_DIAGNOSTICS = 7005
+_ID_BTN_TOOLS = 7006
 _ID_GROUP_SAFETY = 8000
 _ID_SAFETY_STATUS = 8001
 _ID_NUM_SAFETY_CAP = 8002
@@ -444,6 +445,7 @@ if _C4D_AVAILABLE:
             self.AddButton(_ID_BTN_INSPECT, c4d.BFH_SCALEFIT, name="Inspect Selected Object")
             self.AddButton(_ID_BTN_COPY_META, c4d.BFH_SCALEFIT, name="Copy Metadata JSON")
             self.AddButton(_ID_BTN_DATASET_MGR, c4d.BFH_SCALEFIT, name="Dataset Manager…")
+            self.AddButton(_ID_BTN_TOOLS, c4d.BFH_SCALEFIT, name="External Tools…")
             self.AddButton(_ID_BTN_SAVE_STATE, c4d.BFH_SCALEFIT, name="Save UNAV State")
             self.AddButton(_ID_BTN_LOAD_STATE, c4d.BFH_SCALEFIT, name="Load UNAV State")
             self.AddButton(_ID_BTN_RESET_PREFS, c4d.BFH_SCALEFIT, name="Reset Preferences")
@@ -1058,6 +1060,8 @@ if _C4D_AVAILABLE:
                     self._do_route_focus()
                 elif mid == _ID_BTN_DATASET_MGR:
                     self._do_open_dataset_manager()
+                elif mid == _ID_BTN_TOOLS:
+                    self._do_open_tools()
                 elif mid == _ID_BTN_SAVE_STATE:
                     self._append_log(
                         mock_actions.save_unav_state(
@@ -3095,6 +3099,7 @@ if _C4D_AVAILABLE:
         # reuses the same window.
         _dataset_dialog = None
         _diagnostics_dialog = None
+        _tools_dialog = None
 
         def _do_open_diagnostics(self) -> None:
             from core.plugin_ids import PLUGIN_ID_DIAGNOSTICS_DIALOG
@@ -3132,6 +3137,22 @@ if _C4D_AVAILABLE:
             self._append_log(
                 "Dataset Manager: opened." if opened
                 else "Dataset Manager: could not open window."
+            )
+
+        def _do_open_tools(self) -> None:
+            from core.plugin_ids import PLUGIN_ID_TOOLS_DIALOG
+            from ui.tools_panel import UnavToolsDialog
+
+            if self._tools_dialog is None:
+                self._tools_dialog = UnavToolsDialog()
+            opened = self._tools_dialog.Open(
+                dlgtype=c4d.DLG_TYPE_ASYNC,
+                pluginid=PLUGIN_ID_TOOLS_DIALOG,
+                defaultw=640, defaulth=620,
+            )
+            self._append_log(
+                "External Tools: opened." if opened
+                else "External Tools: could not open window."
             )
 
         def _do_copy_metadata(self) -> None:

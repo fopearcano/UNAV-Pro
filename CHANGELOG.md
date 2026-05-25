@@ -4,6 +4,56 @@ All notable changes to UNAV Pro are tracked here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [3.9.0] — Integrated External Tools
+
+Surface the heavy preprocessing tools (Gaia / JPL /
+SDSS / DESI fetch, spatial index, DB import, dataset
+audit, binary export) from inside the plugin while
+they run in a **separate external Python**. The C4D
+plugin runtime stays stdlib-only. **Not** rendering.
+**No** IPC. **No** heavy dependencies inside C4D.
+v3.8 runtime preserved byte-for-byte.
+
+### Added
+
+* `unav_pro/tools/tool_registry.py` — pure-data
+  `ToolSpec` / `ToolInput` registry describing nine
+  tools across fetch / processing / export
+  categories, with only the minimal *safe* form
+  fields each exposes.
+* `unav_pro/tools/python_env.py` — external-Python
+  detection (skips the C4D embedded interpreter),
+  timeout-bounded `--version` validation, and a
+  persisted `external_python_path` config preference.
+* `unav_pro/tools/tool_runner.py` — safe command
+  construction, log-streaming subprocess runner,
+  structured `ToolRunResult`, failure classification
+  (missing python / script / dependency / network),
+  safe default limits, and a cancellation placeholder.
+* `unav_pro/ui/tools_panel.py` — `ToolsPanelController`
+  (pure, tested) + a c4d dialog with Python
+  Environment / Data Fetch / Processing / Export
+  sections and a warn-before-long-run guard.
+* Dataset Manager integration
+  (`DatasetManagerController.register_tool_output`) —
+  register a fetched catalog (and attach an index) on
+  success; attach index / DB from processing tools.
+* `requirements-tools.txt` + `tools/setup_unav_tools_env.py`
+  (venv bootstrap that prints the interpreter path).
+* `external_python_path` field on `UnavConfig`.
+* Main-dialog **External Tools…** button +
+  `PLUGIN_ID_TOOLS_DIALOG`.
+* Docs: `INTEGRATED_EXTERNAL_TOOLS`,
+  `TOOLS_PYTHON_ENVIRONMENT`, `DATA_FETCH_UI_WORKFLOW`,
+  `REQUIREMENTS_TOOLS`, `EXTERNAL_TOOLS_AUDIT`.
+
+### Notes
+
+* The bundled tools are stdlib-only — nothing is
+  installed into Cinema 4D's embedded Python.
+* No new on-disk schemas; `external_python_path` is an
+  additive, optional config key.
+
 ## [3.8.0] — Exhibition & Guided Tour Workflows
 
 Exhibition / guided-tour milestone. Goal: polish

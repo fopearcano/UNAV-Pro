@@ -64,6 +64,13 @@ class UnavConfig:
     #: the starting directory for "Add Dataset".
     last_catalog_path: Optional[str] = None
 
+    #: Path to the external Python interpreter used to run the heavy
+    #: preprocessing tools (Gaia/JPL/SDSS/DESI fetch, indexing, DB
+    #: import, audit, export). Kept *outside* Cinema 4D's embedded
+    #: interpreter so the plugin stays lightweight. ``None`` means
+    #: "auto-detect a system Python ≥ 3.10".
+    external_python_path: Optional[str] = None
+
     # ---------------------------------------------------- (de)serialization
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

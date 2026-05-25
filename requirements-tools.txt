@@ -1,0 +1,38 @@
+# UNAV Pro — external preprocessing-tools requirements.
+#
+# IMPORTANT: this file is for the SEPARATE external Python environment
+# that runs the heavy preprocessing tools (Gaia / JPL / SDSS / DESI
+# fetch, spatial indexing, DB import, dataset audit, binary export).
+#
+# It is NOT installed into Cinema 4D's embedded interpreter. The C4D
+# plugin runtime stays stdlib-only; nothing here is ever imported
+# inside the host.
+#
+# ---------------------------------------------------------------------------
+# Bundled tools: zero third-party dependencies.
+# ---------------------------------------------------------------------------
+#
+# Every tool that ships with UNAV Pro runs on the Python 3.10+ standard
+# library alone — the data connectors use urllib, the index/DB tools
+# use json/csv/sqlite3. You do NOT need to install anything below to
+# run the bundled fetch / index / import / audit / export tools; a
+# clean Python 3.10+ is enough.
+#
+# Run the setup helper to create a dedicated virtual environment:
+#
+#     python tools/setup_unav_tools_env.py
+#
+# ---------------------------------------------------------------------------
+# Optional extras (uncomment only if YOUR OWN extension tools need them).
+# ---------------------------------------------------------------------------
+#
+# These are common scientific packages users add when extending the
+# preprocessing tools. They are intentionally left commented out so a
+# default setup stays small and fast — and so no large download happens
+# unless you ask for it.
+#
+# requests>=2.31         # friendlier HTTP than urllib for custom fetchers
+# numpy>=1.26            # vectorised math for bespoke catalog transforms
+# pandas>=2.1            # tabular wrangling of large CSV/Parquet inputs
+# astropy>=6.0           # FITS / coordinate-frame helpers
+# astroquery>=0.4.7      # programmatic access to more archives
