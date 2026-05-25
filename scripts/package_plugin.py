@@ -129,6 +129,10 @@ PACKAGE_DOCS: tuple = (
     "docs/DATA_FETCH_UI_WORKFLOW.md",
     "docs/REQUIREMENTS_TOOLS.md",
     "docs/EXTERNAL_TOOLS_AUDIT.md",
+    "docs/UI_EXPERIENCE.md",
+    "docs/UI_EXPERIENCE_AUDIT.md",
+    "docs/UI_TAB_STRUCTURE.md",
+    "docs/USER_WORKFLOW_MAP.md",
 )
 
 #: Path-name parts that exclude any directory or file
@@ -186,6 +190,10 @@ REQUIRED_FILES: tuple = (
     "unav_pro/tools/python_env.py",
     "unav_pro/tools/tool_runner.py",
     "unav_pro/ui/tools_panel.py",
+    "unav_pro/ui/ui_helpers.py",
+    "unav_pro/ui/tab_registry.py",
+    "unav_pro/ui/home_dashboard.py",
+    "unav_pro/ui/confirmations.py",
     "README.md",
     "CHANGELOG.md",
     "LICENSE",
@@ -208,6 +216,9 @@ REQUIRED_FILES: tuple = (
     "docs/TOOLS_PYTHON_ENVIRONMENT.md",
     "docs/DATA_FETCH_UI_WORKFLOW.md",
     "docs/REQUIREMENTS_TOOLS.md",
+    "docs/UI_EXPERIENCE.md",
+    "docs/UI_TAB_STRUCTURE.md",
+    "docs/USER_WORKFLOW_MAP.md",
     "docs/INSTALL_C4D_2023_PLUS.md",
     "docs/QUICK_START.md",
     "docs/PUBLIC_ALPHA_TESTING_GUIDE.md",

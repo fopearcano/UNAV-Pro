@@ -20,7 +20,7 @@ from typing import Tuple
 #: Plugin version string. Stamped into the export manifest,
 #: surfaced in the dialog's title bar / status line, and
 #: read by the packaging script when naming the zip.
-PLUGIN_VERSION: str = "3.9.0"
+PLUGIN_VERSION: str = "3.9.1"
 
 #: Stable codename for the v3.9 milestone — surfaced in
 #: release notes + the dialog's "About" log line.

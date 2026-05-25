@@ -456,9 +456,13 @@ if _C4D_AVAILABLE:
                     self._append_log(self.controller.add_dataset(path or ""))
                     self._refresh()
                 elif mid == _ID_BTN_REMOVE:
+                    from ui.confirmations import confirm_destructive
                     name = self._selected_name()
-                    self._append_log(self.controller.remove_dataset(name or ""))
-                    self._refresh()
+                    if name and not confirm_destructive("delete_dataset"):
+                        self._append_log(f"Remove Dataset: '{name}' kept.")
+                    else:
+                        self._append_log(self.controller.remove_dataset(name or ""))
+                        self._refresh()
                 elif mid == _ID_BTN_TOGGLE:
                     name = self._selected_name()
                     self._append_log(self.controller.toggle_enabled(name or ""))

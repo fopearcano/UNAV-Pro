@@ -36,7 +36,8 @@ if _C4D_AVAILABLE:
                 if self._dialog is None:
                     self._dialog = UnavMainDialog()
                 # Default size sized for laptop-class screens
-                # (~1366×768). The dialog wraps its content in a
+                # (~1366×768) while giving the workflow-ordered tab
+                # strip room. The dialog wraps its content in a
                 # vertical ScrollGroup (see ui/main_dialog.py +
                 # docs/UI_LAYOUT_NOTES.md), so the window stays
                 # resizable in both directions and never forces
@@ -46,8 +47,8 @@ if _C4D_AVAILABLE:
                     self._dialog.Open(
                         dlgtype=c4d.DLG_TYPE_ASYNC,
                         pluginid=PLUGIN_ID_MAIN_DIALOG,
-                        defaultw=720,
-                        defaulth=640,
+                        defaultw=900,
+                        defaulth=700,
                     )
                 )
             except Exception as exc:  # noqa: BLE001 — boundary handler

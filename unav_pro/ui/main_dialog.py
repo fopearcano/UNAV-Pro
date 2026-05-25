@@ -513,9 +513,14 @@ if _C4D_AVAILABLE:
                     _ID_GROUP_TABS,
                     c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT,
                 )
+                # Workflow-ordered tabs (see ui/tab_registry.py +
+                # docs/UI_TAB_STRUCTURE.md): Navigator → Search →
+                # Voyage (bookmarks + missions) → Overlays. The
+                # widget ids are unchanged; only the strip order
+                # follows the user's natural flow now.
+                self._build_navigation_tab()
                 self._build_search_tab()
                 self._build_bookmarks_tab()
-                self._build_navigation_tab()
                 self._build_missions_tab()
                 self._build_overlays_tab()
                 self.GroupEnd()
@@ -983,7 +988,11 @@ if _C4D_AVAILABLE:
                         )
                     )
                 elif mid == _ID_BTN_CLEAR:
-                    self._append_log(mock_actions.clear_scene())
+                    from ui.confirmations import confirm_destructive
+                    if confirm_destructive("clear_scene"):
+                        self._append_log(mock_actions.clear_scene())
+                    else:
+                        self._append_log("Clear Scene: cancelled.")
                 elif mid == _ID_BTN_APPLY_FILTER:
                     self._append_log(mock_actions.apply_view_filter())
                 elif mid == _ID_BTN_REGENERATE:
@@ -1053,7 +1062,11 @@ if _C4D_AVAILABLE:
                 elif mid == _ID_BTN_RT_ADD:
                     self._do_route_add()
                 elif mid == _ID_BTN_RT_CLEAR:
-                    self._do_route_clear()
+                    from ui.confirmations import confirm_destructive
+                    if confirm_destructive("clear_route"):
+                        self._do_route_clear()
+                    else:
+                        self._append_log("Clear Route: cancelled.")
                 elif mid == _ID_BTN_RT_SPLINE:
                     self._do_route_spline()
                 elif mid == _ID_BTN_RT_FOCUS:
@@ -1072,7 +1085,11 @@ if _C4D_AVAILABLE:
                 elif mid == _ID_BTN_LOAD_STATE:
                     self._append_log(mock_actions.load_unav_state())
                 elif mid == _ID_BTN_RESET_PREFS:
-                    self._append_log(mock_actions.reset_preferences())
+                    from ui.confirmations import confirm_destructive
+                    if confirm_destructive("reset_preferences"):
+                        self._append_log(mock_actions.reset_preferences())
+                    else:
+                        self._append_log("Reset Preferences: cancelled.")
                 elif mid == _ID_BTN_DIAGNOSTICS:
                     self._do_open_diagnostics()
                 elif mid == _ID_BTN_SAFETY_REFRESH or mid == _ID_NUM_SAFETY_CAP \
@@ -1085,9 +1102,11 @@ if _C4D_AVAILABLE:
                     # clear the next append would re-
                     # render the cached lines and undo
                     # the clear).
-                    if hasattr(self, "_log_buffer") and self._log_buffer is not None:
-                        self._log_buffer.clear()
-                    self.SetString(_ID_LOG, "")
+                    from ui.confirmations import confirm_destructive
+                    if confirm_destructive("clear_log"):
+                        if hasattr(self, "_log_buffer") and self._log_buffer is not None:
+                            self._log_buffer.clear()
+                        self.SetString(_ID_LOG, "")
                 # v0.6 — search / bookmarks / navigation handlers.
                 elif mid == _ID_BTN_SEARCH_GO:
                     self._do_search()
@@ -1116,7 +1135,11 @@ if _C4D_AVAILABLE:
                 elif mid == _ID_BTN_MISSION_NEW:
                     self._do_mission_new()
                 elif mid == _ID_BTN_MISSION_DELETE:
-                    self._do_mission_delete()
+                    from ui.confirmations import confirm_destructive
+                    if confirm_destructive("delete_mission"):
+                        self._do_mission_delete()
+                    else:
+                        self._append_log("Delete Mission: cancelled.")
                 elif mid == _ID_BTN_MISSION_IMPORT:
                     self._do_mission_import()
                 elif mid == _ID_BTN_MISSION_EXPORT:
@@ -1156,7 +1179,11 @@ if _C4D_AVAILABLE:
                 elif mid == _ID_BTN_MISSION_BAKE:
                     self._do_mission_bake_timeline()
                 elif mid == _ID_BTN_ANIM_CLEAR_KEYS:
-                    self._do_anim_clear_keys()
+                    from ui.confirmations import confirm_destructive
+                    if confirm_destructive("clear_keyframes"):
+                        self._do_anim_clear_keys()
+                    else:
+                        self._append_log("Clear UNAV Keyframes: cancelled.")
                 elif mid == _ID_BTN_ANIM_ADD_MARKERS:
                     self._do_anim_add_markers()
                 elif mid == _ID_BTN_ANIM_CLEAR_MARKERS:

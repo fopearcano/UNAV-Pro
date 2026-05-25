@@ -4,6 +4,50 @@ All notable changes to UNAV Pro are tracked here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [3.9.1] — UI Experience Polish
+
+UX/UI pass only — **no new core features**. Make the dialog feel
+coherent, compact, scalable, and pleasant: workflow-ordered tabs, a
+shared status/log vocabulary, guarded destructive actions, and a Home
+dashboard model.
+
+### Added
+
+* `unav_pro/ui/ui_helpers.py` — shared pure formatters
+  (`status_prefix`, `format_status_label`, `format_warning_box`,
+  `compact_separator`, `normalize_button_label`, `append_log_line`) +
+  c4d widget builders (`add_section_title`, `add_status_label`,
+  `add_warning_box`, `add_button_row`, `add_path_selector`,
+  `add_compact_separator`). Status vocabulary:
+  `[OK]/[WARN]/[ERROR]/[MISSING]/[DISABLED]/[INFO]/[...]`.
+* `unav_pro/ui/tab_registry.py` — canonical workflow-ordered 10-tab IA
+  (Home → Dataset → Navigator → Search → Voyage → Animation → Overlays
+  → Tools → Diagnostics → Settings) as data, with `validate_tabs()`.
+* `unav_pro/ui/home_dashboard.py` — pure
+  `build_dashboard_text(DashboardState)` (version / workspace /
+  datasets / navigator / sector / mission / health).
+* `unav_pro/ui/confirmations.py` — destructive-action registry +
+  `confirm_destructive(...)`.
+* Docs: `UI_EXPERIENCE`, `UI_EXPERIENCE_AUDIT`, `UI_TAB_STRUCTURE`,
+  `USER_WORKFLOW_MAP`. Tests: `test_ui_experience` (33).
+
+### Changed
+
+* Default window size 720×640 → **900×700** (resizable; body still
+  scrolls vertically).
+* In-dialog tab strip reordered toward the workflow:
+  Navigator → Search → Bookmarks → Missions → Overlays.
+* Destructive actions now confirm first: Clear Scene, Clear Route,
+  Reset Preferences, Clear Log, Delete Mission, Clear UNAV Keyframes
+  (main dialog) and Remove Dataset (Dataset Manager).
+
+### Notes
+
+* The full physical re-layout into ten discrete tabs is specified in
+  `UI_TAB_STRUCTURE.md` and backed by the new registry/helpers, but was
+  not done blind — the live `GeDialog` layout can only be visually
+  verified inside Cinema 4D.
+
 ## [3.9.0] — Integrated External Tools
 
 Surface the heavy preprocessing tools (Gaia / JPL /
